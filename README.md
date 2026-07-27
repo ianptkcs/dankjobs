@@ -67,13 +67,19 @@ Drop the resulting binary on your `PATH`.
 ./jobs-tui
 ```
 
-| Key      | Action                              |
-| -------- | ------------------------------------ |
-| `e`      | Reschedule the selected job          |
-| `t`      | Pause / resume its timer             |
-| `d`      | Delete (schedule only, or + files)   |
-| `r`      | Refresh the list                     |
-| `q`      | Quit                                  |
+| Key                 | Action                              |
+| ------------------- | ------------------------------------ |
+| `e`                 | Reschedule the selected job          |
+| `t`                 | Pause / resume its timer             |
+| `d`                 | Delete (schedule only, or + files)   |
+| `r`                 | Refresh the list                     |
+| `q`                 | Quit                                  |
+| `j`/`k`, `↓`/`↑`     | Move down/up (bubbles/table default) |
+| `g`/`G`             | Jump to first/last job                |
+| `ctrl+u`/`ctrl+d`   | Half-page up/down                     |
+
+`u`/`d` alone would also be half-page up/down in a plain bubbles table, but
+`d` is remapped to delete here — use `ctrl+d` for half-page-down instead.
 
 ## Development
 

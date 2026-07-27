@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/table"
@@ -28,14 +29,31 @@ const (
 	minNameColWidth  = 12
 )
 
+// Fixed vertical overhead around the flexible parts of each panel, in
+// lines: 2 border + 1 title + 1 blank line, plus the table's own header row
+// for the jobs panel. Layout math in (*appModel).layout keeps total
+// rendered height within the terminal's actual height — content that
+// doesn't fit gets clipped on purpose (missing a line beats the terminal
+// silently scrolling the header/table off the top).
+const (
+	headerLines       = 1
+	footerLines       = 1
+	tableBoxOverhead  = 2 + 1 + 1 + 1
+	detailBoxOverhead = 2 + 1 + 1
+	minVisibleRows    = 3
+	minDetailLines    = 3
+	tableBoxPercent   = 40
+)
+
 type appModel struct {
-	jobs       []Job
-	table      table.Model
-	mode       mode
-	width      int
-	height     int
-	innerWidth int // shared content width for all panels/header/footer
-	message    string
+	jobs           []Job
+	table          table.Model
+	mode           mode
+	width          int
+	height         int
+	innerWidth     int // shared content width for all panels/header/footer
+	detailMaxLines int
+	message        string
 
 	editJob  *Job
 	editForm *huh.Form
@@ -63,16 +81,17 @@ func newModel() appModel {
 	t.SetStyles(styles)
 
 	m := appModel{table: t, width: 100, height: 30}
-	m.resizeTable()
+	m.layout()
 	m.reloadJobs()
 	return m
 }
 
-// resizeTable recomputes the table's columns and viewport so its rendered
-// width exactly matches m.innerWidth (the same width used by the panel
-// border around it) — a mismatch here makes lipgloss hard-wrap table rows
-// mid-line instead of the border simply clipping to width.
-func (m *appModel) resizeTable() {
+// layout recomputes both the table's columns/width (so its rendered width
+// exactly matches m.innerWidth, the same width used by the panel border
+// around it — a mismatch there makes lipgloss hard-wrap table rows mid-line)
+// and the vertical space budget for the table box vs. the detail box, so
+// header + table box + detail box + footer never exceeds m.height.
+func (m *appModel) layout() {
 	m.innerWidth = m.width - 4
 	if m.innerWidth < 40 {
 		m.innerWidth = 40
@@ -88,6 +107,40 @@ func (m *appModel) resizeTable() {
 		{Title: "log", Width: logColWidth},
 	})
 	m.table.SetWidth(m.innerWidth)
+
+	minBody := tableBoxOverhead + minVisibleRows + detailBoxOverhead + minDetailLines
+	bodyHeight := m.height - headerLines - footerLines
+	if bodyHeight < minBody {
+		bodyHeight = minBody
+	}
+
+	tableBoxHeight := bodyHeight * tableBoxPercent / 100
+	if tableBoxHeight < tableBoxOverhead+minVisibleRows {
+		tableBoxHeight = tableBoxOverhead + minVisibleRows
+	}
+	// Don't reserve more table rows than there are jobs — give the leftover
+	// space to the detail panel instead of padding the table with blank rows.
+	if wanted := tableBoxOverhead + len(m.jobs); wanted >= tableBoxOverhead+minVisibleRows && tableBoxHeight > wanted {
+		tableBoxHeight = wanted
+	}
+
+	detailBoxHeight := bodyHeight - tableBoxHeight
+	if detailBoxHeight < detailBoxOverhead+minDetailLines {
+		detailBoxHeight = detailBoxOverhead + minDetailLines
+	}
+
+	visibleRows := tableBoxHeight - tableBoxOverhead
+	if visibleRows < minVisibleRows {
+		visibleRows = minVisibleRows
+	}
+	// SetHeight subtracts the table's own header row internally, so pass
+	// visibleRows+1 to actually get visibleRows data rows on screen.
+	m.table.SetHeight(visibleRows + 1)
+
+	m.detailMaxLines = detailBoxHeight - detailBoxOverhead
+	if m.detailMaxLines < minDetailLines {
+		m.detailMaxLines = minDetailLines
+	}
 }
 
 func (m appModel) Init() tea.Cmd {
@@ -129,17 +182,13 @@ func (m *appModel) reloadJobs() {
 	}
 	m.table.SetRows(rows)
 	m.table.SetCursor(selectedIndex)
-	if h := len(rows); h > 0 && h < 12 {
-		m.table.SetHeight(h)
-	} else {
-		m.table.SetHeight(12)
-	}
+	m.layout()
 }
 
 func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if sizeMsg, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width, m.height = sizeMsg.Width, sizeMsg.Height
-		m.resizeTable()
+		m.layout()
 		return m, nil
 	}
 
@@ -296,7 +345,11 @@ func (m appModel) View() string {
 		return m.renderModal(title, m.deleteForm.View())
 	}
 
-	header := headerStyle(m.width).Render(fmt.Sprintf("jobs — %d job(s) em %s", len(m.jobs), jobsDir))
+	headerText := fmt.Sprintf("jobs — %d job(s) em %s", len(m.jobs), jobsDir)
+	if avail := m.width - 4; avail > 0 {
+		headerText = strings.TrimRight(padLines(headerText, avail), " ")
+	}
+	header := headerStyle(m.width).Render(headerText)
 
 	tableBox := panelStyle().Render(padLines(
 		titleStyle().Render("jobs")+"\n\n"+m.table.View(), m.innerWidth,
@@ -323,7 +376,19 @@ func (m appModel) renderDetailBody() string {
 	}
 	kind, label := job.Status()
 	styled := statusStyle(kind).Render(statusGlyph(kind) + " " + label)
-	return job.DetailText(styled)
+	return truncateLines(job.DetailText(styled), m.detailMaxLines)
+}
+
+// truncateLines caps body to at most max lines, marking the cut so it reads
+// as "there's more, go look at the file" rather than a silent clip.
+func truncateLines(body string, max int) string {
+	lines := strings.Split(body, "\n")
+	if len(lines) <= max || max <= 1 {
+		return body
+	}
+	lines = lines[:max-1]
+	lines = append(lines, dimStyle().Render("… (cortado — veja o arquivo original)"))
+	return strings.Join(lines, "\n")
 }
 
 func (m appModel) renderModal(title, body string) string {
