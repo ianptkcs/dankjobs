@@ -25,6 +25,8 @@ var (
 	colPink     = lipgloss.Color(mocha.Pink().Hex)
 	colGreen    = lipgloss.Color(mocha.Green().Hex)
 	colYellow   = lipgloss.Color(mocha.Yellow().Hex)
+	colRed      = lipgloss.Color(mocha.Red().Hex)
+	colBlue     = lipgloss.Color(mocha.Blue().Hex)
 	colLavender = lipgloss.Color(mocha.Lavender().Hex)
 )
 
@@ -50,10 +52,16 @@ func footerStyle(width int) lipgloss.Style {
 // already carry their own nested ANSI (e.g. a table's selected-row
 // highlight), breaking alignment. Content is pre-padded to a uniform width
 // with padLines instead, so the border ends up sized correctly on its own.
-func panelStyle() lipgloss.Style {
+// focused switches the border to the same lavender used for input focus in
+// the modals, so the currently-navigable panel (Ctrl+j/Ctrl+k) is obvious.
+func panelStyle(focused bool) lipgloss.Style {
+	border := colSurface1
+	if focused {
+		border = colLavender
+	}
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colSurface1).
+		BorderForeground(border).
 		Background(colBase).
 		Padding(0, 1)
 }
@@ -87,22 +95,34 @@ func dimStyle() lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(colOverlay0).Background(colBase)
 }
 
+// statusStyle follows the Catppuccin style guide's semantics: green for
+// success/active, yellow for a paused/warning state, red for a hard error,
+// blue for a neutral "done, informational" state, and a dim overlay color
+// for anything that just... isn't relevant anymore.
 func statusStyle(kind jobStatusKind) lipgloss.Style {
 	switch kind {
 	case statusActive:
 		return lipgloss.NewStyle().Foreground(colGreen).Background(colBase).Bold(true)
 	case statusPaused:
 		return lipgloss.NewStyle().Foreground(colYellow).Background(colBase).Bold(true)
-	default:
+	case statusCompleted:
+		return lipgloss.NewStyle().Foreground(colBlue).Background(colBase).Bold(true)
+	case statusFailed:
+		return lipgloss.NewStyle().Foreground(colRed).Background(colBase).Bold(true)
+	default: // statusRemoved
 		return dimStyle()
 	}
 }
 
 func statusGlyph(kind jobStatusKind) string {
-	if kind == statusActive || kind == statusPaused {
+	switch kind {
+	case statusActive, statusPaused, statusCompleted:
 		return "●"
+	case statusFailed:
+		return "✕"
+	default: // statusRemoved
+		return "○"
 	}
-	return "○"
 }
 
 func modalBoxStyle() lipgloss.Style {

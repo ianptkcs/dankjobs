@@ -8,14 +8,22 @@ tomorrow at 9am) without needing a full task queue.
 Styled with the official [Catppuccin](https://github.com/catppuccin/catppuccin)
 Mocha palette, following the project's
 [semantic color guidelines](https://github.com/catppuccin/catppuccin/blob/main/docs/style-guide.md) —
-red for errors, yellow for paused/warning states, green for active ones, mauve
-as the primary accent — via [`catppuccin/go`](https://github.com/catppuccin/go)
-for the panels/table and [`huh`](https://github.com/charmbracelet/huh)'s
-built-in Catppuccin theme for the reschedule/delete dialogs. Layout is
-patterned after [dgop](https://github.com/AvengeMedia/dgop)'s bordered-panel
-Bubble Tea style.
+red for errors, yellow for paused/warning states, green for active ones, blue
+for a resolved/informational state, mauve as the primary accent — via
+[`catppuccin/go`](https://github.com/catppuccin/go) for the panels/table and
+[`huh`](https://github.com/charmbracelet/huh)'s built-in Catppuccin theme for
+the reschedule/delete dialogs. Layout is patterned after
+[dgop](https://github.com/AvengeMedia/dgop)'s bordered-panel Bubble Tea style.
 
 ![screenshot](screenshot.png)
+
+Jobs are split across two panels: **pendentes** (still on an active or paused
+timer) and **histórico** (resolved), navigated neovim-split-style with
+`Ctrl+j`/`Ctrl+k` — the focused panel's border lights up. A job's history
+status distinguishes **concluído** (ran, self-removed its timer — the
+convention's job scripts only reach that step on success), **falha** (fired
+but the service unit shows `ActiveState=failed`), and **removido** (its
+schedule was deleted, or it was never scheduled, before ever running).
 
 ## The job convention
 
@@ -67,19 +75,23 @@ Drop the resulting binary on your `PATH`.
 ./jobs-tui
 ```
 
-| Key                 | Action                              |
-| ------------------- | ------------------------------------ |
-| `e`                 | Reschedule the selected job          |
-| `t`                 | Pause / resume its timer             |
-| `d`                 | Delete (schedule only, or + files)   |
-| `r`                 | Refresh the list                     |
-| `q`                 | Quit                                  |
-| `j`/`k`, `↓`/`↑`     | Move down/up (bubbles/table default) |
-| `g`/`G`             | Jump to first/last job                |
-| `ctrl+u`/`ctrl+d`   | Half-page up/down                     |
+| Key                 | Action                                |
+| ------------------- | -------------------------------------- |
+| `e`                 | Reschedule the selected job            |
+| `t`                 | Pause / resume its timer               |
+| `d`                 | Delete (schedule only, or + files)     |
+| `r`                 | Refresh the list                       |
+| `q`                 | Quit                                    |
+| `ctrl+j`/`ctrl+k`   | Move focus between pendentes/histórico |
+| `j`/`k`, `↓`/`↑`     | Move down/up within the focused panel  |
+| `g`/`G`             | Jump to first/last job                  |
+| `ctrl+u`/`ctrl+d`   | Half-page up/down                       |
 
 `u`/`d` alone would also be half-page up/down in a plain bubbles table, but
 `d` is remapped to delete here — use `ctrl+d` for half-page-down instead.
+`ctrl+h`/`ctrl+l` are accepted but currently no-ops, same as
+vim-tmux-navigator when there's no pane in that direction — there's only
+room for the two panels stacked vertically for now.
 
 ## Development
 

@@ -39,6 +39,10 @@ type Job struct {
 	OnCalendar    string
 	UnitFileState string
 	NextElapse    string
+	// ServiceActiveState is only populated when TimerPath != "": it's what
+	// tells a job that's still scheduled apart from one whose timer already
+	// fired and failed (see Status).
+	ServiceActiveState string
 }
 
 func systemctlUser(args ...string) string {
@@ -48,6 +52,21 @@ func systemctlUser(args ...string) string {
 
 func timerProperties(name string) map[string]string {
 	out := systemctlUser("show", name+".timer", "--property=ActiveState,UnitFileState,NextElapseUSecRealtime")
+	return parseProperties(out)
+}
+
+// serviceActiveState reports the ActiveState of <name>.service. A one-shot
+// service that has actually run and failed shows "failed" here; one that
+// hasn't run yet (or ran fine) shows "inactive" — that's the only reliable
+// signal for telling "still pending" apart from "fired and failed", since a
+// failed run never reaches the job script's self-cleanup step and so leaves
+// its timer/service files behind just like a merely-paused job would.
+func serviceActiveState(name string) string {
+	out := systemctlUser("show", name+".service", "--property=ActiveState")
+	return parseProperties(out)["ActiveState"]
+}
+
+func parseProperties(out string) map[string]string {
 	props := map[string]string{}
 	for _, line := range strings.Split(out, "\n") {
 		if k, v, ok := strings.Cut(line, "="); ok {
@@ -117,6 +136,7 @@ func discoverJobs() []Job {
 			props := timerProperties(name)
 			job.UnitFileState = props["UnitFileState"]
 			job.NextElapse = props["NextElapseUSecRealtime"]
+			job.ServiceActiveState = serviceActiveState(name)
 			servicePath := filepath.Join(systemdUserDir, name+".service")
 			if _, err := os.Stat(servicePath); err == nil {
 				job.ServicePath = servicePath
@@ -147,22 +167,66 @@ type jobStatusKind int
 const (
 	statusActive jobStatusKind = iota
 	statusPaused
-	statusRanOrRemoved
-	statusNone
+	statusCompleted
+	statusFailed
+	statusRemoved
 )
 
 // Status returns a coarse status kind (for styling) and a plain-text label.
+//
+// A job's timer/service unit files are only ever deleted by the job
+// script's own self-cleanup step, which runs after everything else
+// succeeds — so TimerPath's presence isn't just "still scheduled", it's
+// also how a failed run is told apart from a completed one: a failure never
+// reaches that cleanup line, leaving the units behind exactly like a merely
+// paused job would. The one further signal needed is whether the service
+// unit actually ran and failed (ActiveState == "failed") versus simply not
+// having fired yet.
 func (j Job) Status() (jobStatusKind, string) {
-	if j.TimerPath == "" {
-		if j.Log != "" {
-			return statusRanOrRemoved, "rodou/removido"
+	if j.TimerPath != "" {
+		if j.ServiceActiveState == "failed" {
+			return statusFailed, "falha"
 		}
-		return statusNone, "sem timer"
+		if j.Enabled() {
+			return statusActive, "ativo"
+		}
+		return statusPaused, "pausado"
 	}
-	if j.Enabled() {
-		return statusActive, "ativo"
+	if j.Log != "" {
+		return statusCompleted, "concluído"
 	}
-	return statusPaused, "pausado"
+	return statusRemoved, "removido"
+}
+
+// IsPending reports whether j still has a live, unresolved schedule —
+// i.e. belongs in the "pendentes" panel rather than "histórico".
+func (j Job) IsPending() bool {
+	kind, _ := j.Status()
+	return kind == statusActive || kind == statusPaused
+}
+
+// HistoryWhen returns when a non-pending job was last touched — the log's
+// mtime (when it finished running) if there is one, else the job
+// directory's own mtime — for display in the histórico panel. historyModTime
+// returns the same thing as a time.Time, for sorting.
+func (j Job) HistoryWhen() string {
+	t := j.historyModTime()
+	if t.IsZero() {
+		return "—"
+	}
+	return fmt.Sprintf("%02d/%02d %02d:%02d", t.Day(), t.Month(), t.Hour(), t.Minute())
+}
+
+func (j Job) historyModTime() time.Time {
+	if j.Log != "" {
+		if info, err := os.Stat(j.Log); err == nil {
+			return info.ModTime()
+		}
+	}
+	if info, err := os.Stat(j.Dir); err == nil {
+		return info.ModTime()
+	}
+	return time.Time{}
 }
 
 // DetailText renders the job's detail panel body. statusLabel is injected
@@ -180,7 +244,7 @@ func (j Job) DetailText(statusLabel string) string {
 			fmt.Fprintf(&b, "comando: %s\n", j.Script)
 		}
 	} else {
-		fmt.Fprintf(&b, "\nstatus: %s\n", statusLabel)
+		fmt.Fprintf(&b, "\nstatus: %s   (%s)\n", statusLabel, j.HistoryWhen())
 	}
 
 	if j.Body != "" {
