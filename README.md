@@ -1,15 +1,19 @@
 # jobs-tui
 
-A [Textual](https://github.com/Textualize/textual) TUI for browsing and managing
-one-shot "jobs" scheduled as systemd user timers — a lightweight pattern for
-deferring CLI/git work (finish this branch tonight, open that PR tomorrow at 9am)
-without needing a full task queue.
+A [Bubble Tea](https://github.com/charmbracelet/bubbletea) TUI for browsing and
+managing one-shot "jobs" scheduled as systemd user timers — a lightweight
+pattern for deferring CLI/git work (finish this branch tonight, open that PR
+tomorrow at 9am) without needing a full task queue.
 
 Styled with the official [Catppuccin](https://github.com/catppuccin/catppuccin)
-palette (Mocha by default, plus Latte/Frappé/Macchiato) following the project's
+Mocha palette, following the project's
 [semantic color guidelines](https://github.com/catppuccin/catppuccin/blob/main/docs/style-guide.md) —
-red for errors, yellow for paused/warning states, green for active ones, mauve as
-the primary accent.
+red for errors, yellow for paused/warning states, green for active ones, mauve
+as the primary accent — via [`catppuccin/go`](https://github.com/catppuccin/go)
+for the panels/table and [`huh`](https://github.com/charmbracelet/huh)'s
+built-in Catppuccin theme for the reschedule/delete dialogs. Layout is
+patterned after [dgop](https://github.com/AvengeMedia/dgop)'s bordered-panel
+Bubble Tea style.
 
 ![screenshot](screenshot.png)
 
@@ -41,48 +45,45 @@ without a schedule.
   kiwi-pr.service
 ```
 
+`JOBS_TUI_JOBS_DIR` / `JOBS_TUI_SYSTEMD_DIR` override the two directories
+above, if you want to point jobs-tui somewhere other than `~/jobs` and
+`~/.config/systemd/user`.
+
 ## Install
 
-Requires Python 3.11+.
+Requires Go 1.23+.
 
 ```bash
 git clone https://github.com/ianptkcs/jobs-tui.git
 cd jobs-tui
-python3 -m venv .venv
-.venv/bin/pip install textual
+go build -o jobs-tui .
 ```
 
-Optionally, drop a launcher on your `PATH`:
-
-```bash
-#!/usr/bin/env bash
-exec /path/to/jobs-tui/.venv/bin/python /path/to/jobs-tui/app.py
-```
+Drop the resulting binary on your `PATH`.
 
 ## Usage
 
 ```bash
-.venv/bin/python app.py
+./jobs-tui
 ```
 
-| Key      | Action                          |
-| -------- | -------------------------------- |
-| `e`      | Reschedule the selected job      |
-| `t`      | Pause / resume its timer         |
-| `d`      | Delete (schedule only, or + files) |
-| `r`      | Refresh the list                 |
-| `q`      | Quit                              |
-| `ctrl+p` | Command palette — switch theme, among other things |
+| Key      | Action                              |
+| -------- | ------------------------------------ |
+| `e`      | Reschedule the selected job          |
+| `t`      | Pause / resume its timer             |
+| `d`      | Delete (schedule only, or + files)   |
+| `r`      | Refresh the list                     |
+| `q`      | Quit                                  |
 
 ## Development
 
 ```bash
-.venv/bin/python smoke_test.py
+go test ./...
 ```
 
-Runs an end-to-end [Textual pilot](https://textual.textualize.io/guide/testing/)
-smoke test against a disposable fixture job + systemd timer created and torn
-down by the test itself — it never touches your real jobs.
+Job discovery, toggling, rescheduling and deletion are covered against a
+disposable fixture job + systemd timer that each test creates and tears down
+itself (`jobs_test.go`) — it never touches a real scheduled job.
 
 ## License
 
