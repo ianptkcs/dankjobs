@@ -1,0 +1,35 @@
+name: Bug report
+description: Report incorrect behavior in djobs
+labels: ['bug']
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened
+      description: Describe the bug and what you expected to happen instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run djobs with '...'
+        2. Press '...'
+        3. See the error
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: OS, terminal emulator, djobs version/commit, etc.
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: Paste relevant logs or screenshots here. Never paste API keys or tokens.
+    validations:
+      required: false
