@@ -105,4 +105,6 @@ itself (`jobs_test.go`) — it never touches a real scheduled job.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+[PolyForm Noncommercial License 1.0.0](LICENSE) — free to use for
+noncommercial purposes (study, hobby, contribution). Commercial use
+requires the author's permission.
