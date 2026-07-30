@@ -21,7 +21,10 @@ var (
 	colOverlay1 = lipgloss.Color(mocha.Overlay1().Hex)
 	colText     = lipgloss.Color(mocha.Text().Hex)
 	colSubtext0 = lipgloss.Color(mocha.Subtext0().Hex)
-	colMauve    = lipgloss.Color(mocha.Mauve().Hex)
+	// colPrimary mirrors the installed DankMaterialShell's own configured
+	// accent (falling back to a manually chosen Catppuccin accent, mauve by
+	// default, when DMS isn't installed/configured) — see dmstheme.go.
+	colPrimary  = lipgloss.Color(resolvePrimaryHex())
 	colPink     = lipgloss.Color(mocha.Pink().Hex)
 	colGreen    = lipgloss.Color(mocha.Green().Hex)
 	colYellow   = lipgloss.Color(mocha.Yellow().Hex)
@@ -33,7 +36,7 @@ var (
 func headerStyle(width int) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Background(colMantle).
-		Foreground(colMauve).
+		Foreground(colPrimary).
 		Bold(true).
 		Width(width).
 		Padding(0, 2)
@@ -52,12 +55,12 @@ func footerStyle(width int) lipgloss.Style {
 // already carry their own nested ANSI (e.g. a table's selected-row
 // highlight), breaking alignment. Content is pre-padded to a uniform width
 // with padLines instead, so the border ends up sized correctly on its own.
-// focused switches the border to the same lavender used for input focus in
-// the modals, so the currently-navigable panel (Ctrl+j/Ctrl+k) is obvious.
+// focused switches the border to colPrimary (also used for headers/titles),
+// so the currently-navigable panel (Ctrl+h/j/k/l) is obvious.
 func panelStyle(focused bool) lipgloss.Style {
 	border := colSurface1
 	if focused {
-		border = colLavender
+		border = colPrimary
 	}
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -88,7 +91,7 @@ func padLines(s string, width int) string {
 // Header does: it's the first line inside a panel, so its own reset must not
 // blank out the panel's background for that line.
 func titleStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Bold(true).Foreground(colMauve).Background(colBase)
+	return lipgloss.NewStyle().Bold(true).Foreground(colPrimary).Background(colBase)
 }
 
 func dimStyle() lipgloss.Style {
