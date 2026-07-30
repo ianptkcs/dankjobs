@@ -139,6 +139,6 @@ itself (`jobs_test.go`) — it never touches a real scheduled job.
 
 ## License
 
-[PolyForm Noncommercial License 1.0.0](LICENSE) — free to use for
-noncommercial purposes (study, hobby, contribution). Commercial use
-requires the author's permission.
+[GNU AGPL-3.0](LICENSE) — free and open source. If you run a modified
+version of this project, including as a network service, you must also
+make your modified source available under the same license.
