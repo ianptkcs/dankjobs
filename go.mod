@@ -1,4 +1,4 @@
-module github.com/ianptkcs/jobs-tui
+module github.com/ianptkcs/djobs
 
 go 1.26.1
 
