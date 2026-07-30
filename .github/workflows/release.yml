@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -40,6 +40,22 @@ jobs:
           BIN="djobs-${{ matrix.goos }}-${{ matrix.goarch }}"
           go build -o "dist/$BIN" .
           tar -C dist -czf "dist/$BIN.tar.gz" "$BIN"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: djobs-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
