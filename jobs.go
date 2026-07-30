@@ -13,8 +13,8 @@ import (
 
 var (
 	homeDir, _     = os.UserHomeDir()
-	jobsDir        = envOr("JOBS_TUI_JOBS_DIR", filepath.Join(homeDir, "jobs"))
-	systemdUserDir = envOr("JOBS_TUI_SYSTEMD_DIR", filepath.Join(homeDir, ".config", "systemd", "user"))
+	jobsDir        = envOr("DJOBS_JOBS_DIR", filepath.Join(homeDir, "jobs"))
+	systemdUserDir = envOr("DJOBS_SYSTEMD_DIR", filepath.Join(homeDir, ".config", "systemd", "user"))
 )
 
 func envOr(key, fallback string) string {
@@ -25,6 +25,20 @@ func envOr(key, fallback string) string {
 }
 
 var onCalendarRe = regexp.MustCompile(`(?m)^OnCalendar=(.+)$`)
+
+var jobNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
+
+// validateJobName is shared by the create form (as a huh.Validate callback)
+// and createJob itself.
+func validateJobName(name string) error {
+	if !jobNameRe.MatchString(name) {
+		return fmt.Errorf("use letras, números, - ou _ (começando com letra/número)")
+	}
+	if _, err := os.Stat(filepath.Join(jobsDir, name)); err == nil {
+		return fmt.Errorf("já existe um job '%s'", name)
+	}
+	return nil
+}
 
 // Job mirrors one ~/jobs/<name>/ directory paired with an optional
 // <name>.timer / <name>.service systemd user unit of the same name.
@@ -289,16 +303,21 @@ func toggleJob(j Job) {
 	}
 }
 
-// rescheduleJob rewrites the OnCalendar= line of j's timer unit. Year rolls
-// over to next year if the given month/day already passed this year,
-// mirroring how a one-shot job's date is normally picked interactively.
-func rescheduleJob(j Job, minute, hour, dom, month int, now time.Time) error {
+// computeOnCalendar builds a systemd OnCalendar= timestamp for a one-shot
+// job. Year rolls over to next year if the given month/day already passed
+// this year, mirroring how such a date is normally picked interactively.
+func computeOnCalendar(minute, hour, dom, month int, now time.Time) string {
 	year := now.Year()
 	todayMonth, todayDay := int(now.Month()), now.Day()
 	if month < todayMonth || (month == todayMonth && dom < todayDay) {
 		year++
 	}
-	onCalendar := fmt.Sprintf("%04d-%02d-%02d %02d:%02d:00", year, month, dom, hour, minute)
+	return fmt.Sprintf("%04d-%02d-%02d %02d:%02d:00", year, month, dom, hour, minute)
+}
+
+// rescheduleJob rewrites the OnCalendar= line of j's timer unit.
+func rescheduleJob(j Job, minute, hour, dom, month int, now time.Time) error {
+	onCalendar := computeOnCalendar(minute, hour, dom, month, now)
 
 	data, err := os.ReadFile(j.TimerPath)
 	if err != nil {
@@ -312,6 +331,81 @@ func rescheduleJob(j Job, minute, hour, dom, month int, now time.Time) error {
 	if j.Enabled() {
 		enableNow(j.Name)
 	}
+	return nil
+}
+
+// createJob writes a new job directory + script, plus its paired systemd
+// timer/service units, and enables the timer — the same convention
+// discoverJobs expects (see instructions.md). The generated script ends
+// with the self-cleanup block that convention relies on: without it, a
+// successful run would leave the timer/service files behind and the job
+// would never move from "pendentes" to "histórico".
+func createJob(name, commands, notes string, minute, hour, dom, month int, now time.Time) error {
+	if err := validateJobName(name); err != nil {
+		return err
+	}
+
+	dir := filepath.Join(jobsDir, name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+
+	scriptPath := filepath.Join(dir, name+".sh")
+	logPath := filepath.Join(dir, name+".log")
+	timerPath := filepath.Join(systemdUserDir, name+".timer")
+	servicePath := filepath.Join(systemdUserDir, name+".service")
+
+	script := fmt.Sprintf(`#!/usr/bin/env bash
+set -euo pipefail
+
+JOB_NAME=%q
+
+%s
+
+# self-remove the systemd unit pair once done (one-shot, not recurring)
+systemctl --user disable --now "${JOB_NAME}.timer" 2>/dev/null || true
+rm -f %q %q
+systemctl --user daemon-reload
+`, name, strings.TrimSpace(commands), timerPath, servicePath)
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		return err
+	}
+
+	if notes := strings.TrimSpace(notes); notes != "" {
+		if err := os.WriteFile(filepath.Join(dir, name+"-body.txt"), []byte(notes+"\n"), 0o644); err != nil {
+			return err
+		}
+	}
+
+	service := fmt.Sprintf(`[Unit]
+Description=%s
+
+[Service]
+Type=oneshot
+ExecStart=%s
+StandardOutput=append:%s
+StandardError=append:%s
+`, name, scriptPath, logPath, logPath)
+	if err := os.WriteFile(servicePath, []byte(service), 0o644); err != nil {
+		return err
+	}
+
+	timer := fmt.Sprintf(`[Unit]
+Description=%s
+
+[Timer]
+OnCalendar=%s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+`, name, computeOnCalendar(minute, hour, dom, month, now))
+	if err := os.WriteFile(timerPath, []byte(timer), 0o644); err != nil {
+		return err
+	}
+
+	daemonReload()
+	enableNow(name)
 	return nil
 }
 

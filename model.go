@@ -18,15 +18,22 @@ const (
 	modeList mode = iota
 	modeEdit
 	modeDelete
+	modeCreate
 )
 
-// panelFocus selects which of the two job tables Ctrl+j/Ctrl+k moves
-// between (neovim-style pane navigation) and which one drives currentJob().
+// panelFocus selects which of the three panels (pendentes, histórico, or
+// detalhes) currently receives key input — neovim-style pane navigation:
+// Ctrl+h/l move between the side-by-side pendentes/histórico panels,
+// Ctrl+j/k move down into detalhes and back up. focusDetail is a dead end
+// for currentJob(): selectedSide (below) keeps tracking whichever of
+// pendentes/histórico was last active, so the detail view keeps showing
+// that job while focus is parked on detalhes.
 type panelFocus int
 
 const (
 	focusPending panelFocus = iota
 	focusHistory
+	focusDetail
 )
 
 // Column widths (content width, before bubbles/table's default Padding(0,1)
@@ -51,10 +58,14 @@ const (
 	detailBoxOverhead = 2 + 1 + 1
 	minVisibleRows    = 2
 	minDetailLines    = 3
-	// Of the space left after the detail panel, pendentes gets 2/3 and
-	// histórico 1/3.
-	jobsAreaPercent     = 42
-	pendingSharePercent = 67
+	// Share of body height given to the pendentes/histórico row (both
+	// panels sit side by side in that row, same height).
+	jobsRowPercent = 45
+	// pendentes:histórico WIDTH ratio, side by side in that row.
+	pendingWidthShare  = 3
+	historyWidthShare  = 2
+	panelGap           = 1
+	minPanelInnerWidth = 20
 )
 
 type appModel struct {
@@ -64,13 +75,24 @@ type appModel struct {
 	pendingTable table.Model
 	historyTable table.Model
 	focus        panelFocus
+	// selectedSide is which of pendentes/histórico currentJob() reads
+	// from — always focusPending or focusHistory, never focusDetail. It
+	// only changes on Ctrl+h/l, so it survives a Ctrl+j trip into detalhes.
+	selectedSide panelFocus
+	// detailScroll is the first visible line of the current job's detail
+	// text, adjusted by j/k (or the arrow keys) while focus is on detalhes.
+	detailScroll int
 
-	mode           mode
-	width          int
-	height         int
-	innerWidth     int // shared content width for all panels/header/footer
-	detailMaxLines int
-	message        string
+	mode       mode
+	width      int
+	height     int
+	innerWidth int // content width for header/detail/footer (full width)
+	// Content width of each side-by-side panel — pendentes gets a 3:2 share
+	// of the row over histórico.
+	pendingInnerWidth int
+	historyInnerWidth int
+	detailMaxLines    int
+	message           string
 
 	// Rune offset/width of the status column within a rendered table line,
 	// used by colorizeStatusColumn — set by layout() alongside the column
@@ -84,6 +106,8 @@ type appModel struct {
 
 	deleteJob  *Job
 	deleteForm *huh.Form
+
+	createForm *huh.Form
 }
 
 func newJobTable() table.Model {
@@ -122,17 +146,18 @@ func (m appModel) Init() tea.Cmd {
 	return nil
 }
 
-// focusedTable/otherTable let most code work generically instead of
-// switching on m.focus everywhere.
+// focusedTable/focusedJobs dispatch on selectedSide (not focus — focus can
+// also be focusDetail, which has no table of its own) so most code can work
+// generically instead of switching on the side everywhere.
 func (m *appModel) focusedTable() *table.Model {
-	if m.focus == focusPending {
+	if m.selectedSide == focusPending {
 		return &m.pendingTable
 	}
 	return &m.historyTable
 }
 
 func (m *appModel) focusedJobs() []Job {
-	if m.focus == focusPending {
+	if m.selectedSide == focusPending {
 		return m.pendingJobs
 	}
 	return m.historyJobs
@@ -156,6 +181,7 @@ func (m *appModel) currentJob() *Job {
 // one's cursor on its previously selected job by name instead of resetting
 // to row 0.
 func (m *appModel) reloadJobs() {
+	m.detailScroll = 0
 	prevPending, prevHistory := jobName(m.pendingJobs, m.pendingTable.Cursor()), jobName(m.historyJobs, m.historyTable.Cursor())
 
 	all := discoverJobs()
@@ -216,17 +242,34 @@ func indexOfName(jobs []Job, name string) int {
 }
 
 // layout recomputes column widths for both tables (so each one's rendered
-// width exactly matches m.innerWidth, the same width used by the panel
-// border around it — a mismatch there makes lipgloss hard-wrap rows
-// mid-line) and the vertical space budget across all three panels, so
-// header + pendentes + histórico + detalhes + footer never exceeds m.height.
+// width exactly matches its panel's inner width — a mismatch there makes
+// lipgloss hard-wrap rows mid-line) and the vertical space budget across the
+// jobs row + detalhes panel, so header + jobs row + detalhes + footer never
+// exceeds m.height. Pendentes and histórico sit side by side in the same
+// row, splitting its width 2:1.
 func (m *appModel) layout() {
 	m.innerWidth = m.width - 4
 	if m.innerWidth < 40 {
 		m.innerWidth = 40
 	}
 
-	pendingNameWidth := m.innerWidth - 3*2 - scheduleColWidth - statusColWidth
+	totalRowWidth := m.width - panelGap
+	if minRowWidth := 2 * (minPanelInnerWidth + 4); totalRowWidth < minRowWidth {
+		totalRowWidth = minRowWidth
+	}
+	pendingBoxWidth := totalRowWidth * pendingWidthShare / (pendingWidthShare + historyWidthShare)
+	historyBoxWidth := totalRowWidth - pendingBoxWidth
+
+	m.pendingInnerWidth = pendingBoxWidth - 4
+	if m.pendingInnerWidth < minPanelInnerWidth {
+		m.pendingInnerWidth = minPanelInnerWidth
+	}
+	m.historyInnerWidth = historyBoxWidth - 4
+	if m.historyInnerWidth < minPanelInnerWidth {
+		m.historyInnerWidth = minPanelInnerWidth
+	}
+
+	pendingNameWidth := m.pendingInnerWidth - 3*2 - scheduleColWidth - statusColWidth
 	if pendingNameWidth < minNameColWidth {
 		pendingNameWidth = minNameColWidth
 	}
@@ -235,10 +278,10 @@ func (m *appModel) layout() {
 		{Title: "agendado para", Width: scheduleColWidth},
 		{Title: "status", Width: statusColWidth},
 	})
-	m.pendingTable.SetWidth(m.innerWidth)
+	m.pendingTable.SetWidth(m.pendingInnerWidth)
 	m.pendingStatusOffset = (pendingNameWidth + 2) + (scheduleColWidth + 2)
 
-	historyNameWidth := m.innerWidth - 3*2 - whenColWidth - statusColWidth
+	historyNameWidth := m.historyInnerWidth - 3*2 - whenColWidth - statusColWidth
 	if historyNameWidth < minNameColWidth {
 		historyNameWidth = minNameColWidth
 	}
@@ -247,53 +290,35 @@ func (m *appModel) layout() {
 		{Title: "data", Width: whenColWidth},
 		{Title: "status", Width: statusColWidth},
 	})
-	m.historyTable.SetWidth(m.innerWidth)
+	m.historyTable.SetWidth(m.historyInnerWidth)
 	m.historyStatusOffset = (historyNameWidth + 2) + (whenColWidth + 2)
 	m.statusCellWidth = statusColWidth + 2
 
-	minBody := 2*tableBoxOverhead + 2*minVisibleRows + detailBoxOverhead + minDetailLines
+	minBody := tableBoxOverhead + minVisibleRows + detailBoxOverhead + minDetailLines
 	bodyHeight := m.height - headerLines - footerLines
 	if bodyHeight < minBody {
 		bodyHeight = minBody
 	}
 
-	jobsAreaHeight := bodyHeight * jobsAreaPercent / 100
-	minJobsArea := 2*tableBoxOverhead + 2*minVisibleRows
-	if jobsAreaHeight < minJobsArea {
-		jobsAreaHeight = minJobsArea
+	jobsRowHeight := bodyHeight * jobsRowPercent / 100
+	minJobsRow := tableBoxOverhead + minVisibleRows
+	if jobsRowHeight < minJobsRow {
+		jobsRowHeight = minJobsRow
+	}
+	// Never hand the row more height than the longer of the two lists
+	// actually needs — leftover falls through to the detail panel instead.
+	idealRows := max(len(m.pendingJobs), len(m.historyJobs))
+	if idealJobsRow := max(tableBoxOverhead+idealRows, minJobsRow); jobsRowHeight > idealJobsRow {
+		jobsRowHeight = idealJobsRow
 	}
 
-	// Each panel's actual ceiling: enough rows for every job it has, never
-	// less than minVisibleRows. Neither panel should be handed more than
-	// this even if the 2/3-1/3 split below would give it more.
-	minPending := tableBoxOverhead + minVisibleRows
-	idealPending := max(tableBoxOverhead+len(m.pendingJobs), minPending)
-	minHistory := tableBoxOverhead + minVisibleRows
-	idealHistory := max(tableBoxOverhead+len(m.historyJobs), minHistory)
-
-	pendingBoxHeight := min(max(jobsAreaHeight*pendingSharePercent/100, minPending), idealPending)
-	historyBoxHeight := min(max(jobsAreaHeight-pendingBoxHeight, minHistory), idealHistory)
-
-	// A panel with fewer jobs than its share frees up space — offer that to
-	// whichever job panel is still short of its own ideal before letting it
-	// fall through to the detail panel.
-	if leftover := jobsAreaHeight - pendingBoxHeight - historyBoxHeight; leftover > 0 {
-		if grow := min(leftover, idealPending-pendingBoxHeight); grow > 0 {
-			pendingBoxHeight += grow
-			leftover -= grow
-		}
-		if grow := min(leftover, idealHistory-historyBoxHeight); grow > 0 {
-			historyBoxHeight += grow
-		}
-	}
-
-	detailBoxHeight := bodyHeight - pendingBoxHeight - historyBoxHeight
+	detailBoxHeight := bodyHeight - jobsRowHeight
 	if detailBoxHeight < detailBoxOverhead+minDetailLines {
 		detailBoxHeight = detailBoxOverhead + minDetailLines
 	}
 
-	setTableVisibleRows(&m.pendingTable, pendingBoxHeight-tableBoxOverhead)
-	setTableVisibleRows(&m.historyTable, historyBoxHeight-tableBoxOverhead)
+	setTableVisibleRows(&m.pendingTable, jobsRowHeight-tableBoxOverhead)
+	setTableVisibleRows(&m.historyTable, jobsRowHeight-tableBoxOverhead)
 
 	m.detailMaxLines = detailBoxHeight - detailBoxOverhead
 	if m.detailMaxLines < minDetailLines {
@@ -322,6 +347,8 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateEdit(msg)
 	case modeDelete:
 		return m.updateDelete(msg)
+	case modeCreate:
+		return m.updateCreate(msg)
 	default:
 		return m.updateList(msg)
 	}
@@ -341,14 +368,31 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.reloadJobs()
 		m.message = "Lista atualizada."
 		return m, nil
-	// Neovim-style pane navigation: Ctrl+j/Ctrl+k move focus between the
-	// pendentes and histórico panels (Ctrl+h/Ctrl+l are no-ops, same as
-	// vim-tmux-navigator when there's no pane in that direction).
-	case "ctrl+j":
+	case "n":
+		m.createForm = newCreateForm()
+		m.mode = modeCreate
+		return m, m.createForm.Init()
+	// Neovim-style pane navigation: Ctrl+h/l move between the side-by-side
+	// pendentes/histórico panels; Ctrl+j/k move down into detalhes and back
+	// up. No-op when there's no pane in that direction, same as
+	// vim-tmux-navigator.
+	case "ctrl+h":
+		m.focus = focusPending
+		m.selectedSide = focusPending
+		return m, nil
+	case "ctrl+l":
 		m.focus = focusHistory
+		m.selectedSide = focusHistory
+		return m, nil
+	case "ctrl+j":
+		if m.focus != focusDetail {
+			m.focus = focusDetail
+		}
 		return m, nil
 	case "ctrl+k":
-		m.focus = focusPending
+		if m.focus == focusDetail {
+			m.focus = m.selectedSide
+		}
 		return m, nil
 	case "e":
 		job := m.currentJob()
@@ -394,15 +438,41 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.deleteForm.Init()
 	}
 
+	// Detalhes has no table of its own — j/k (and the arrow keys) scroll its
+	// text by one line instead of moving a cursor. Any other key while
+	// focused there is simply ignored.
+	if m.focus == focusDetail {
+		switch keyMsg.String() {
+		case "j", "down":
+			if m.detailScroll < m.maxDetailScroll() {
+				m.detailScroll++
+			}
+		case "k", "up":
+			if m.detailScroll > 0 {
+				m.detailScroll--
+			}
+		}
+		return m, nil
+	}
+
 	return m.forwardToFocusedTable(msg)
 }
 
+// forwardToFocusedTable forwards to whichever table selectedSide points at,
+// resetting detailScroll if that moved the cursor to a different job — the
+// old scroll offset otherwise makes no sense against new detail text.
 func (m appModel) forwardToFocusedTable(msg tea.Msg) (tea.Model, tea.Cmd) {
+	prevName := jobName(m.focusedJobs(), m.focusedTable().Cursor())
+
 	var cmd tea.Cmd
-	if m.focus == focusPending {
+	if m.selectedSide == focusPending {
 		m.pendingTable, cmd = m.pendingTable.Update(msg)
 	} else {
 		m.historyTable, cmd = m.historyTable.Update(msg)
+	}
+
+	if jobName(m.focusedJobs(), m.focusedTable().Cursor()) != prevName {
+		m.detailScroll = 0
 	}
 	return m, cmd
 }
@@ -431,6 +501,43 @@ func (m appModel) updateEdit(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mode = modeList
 		m.editForm = nil
 		m.editJob = nil
+		m.reloadJobs()
+		return m, nil
+	}
+
+	return m, cmd
+}
+
+func (m appModel) updateCreate(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "esc" {
+		m.mode = modeList
+		m.createForm = nil
+		return m, nil
+	}
+
+	form, cmd := m.createForm.Update(msg)
+	if f, ok := form.(*huh.Form); ok {
+		m.createForm = f
+	}
+
+	if m.createForm.State == huh.StateCompleted {
+		name := m.createForm.GetString("name")
+		dom, month, errD := parseDDMM(m.createForm.GetString("date"))
+		hour, minute, errT := parseHHMM(m.createForm.GetString("time"))
+		commands := m.createForm.GetString("commands")
+		notes := m.createForm.GetString("notes")
+		m.mode = modeList
+		m.createForm = nil
+
+		if errD == nil && errT == nil {
+			if err := createJob(name, commands, notes, minute, hour, dom, month, time.Now()); err == nil {
+				m.message = fmt.Sprintf("'%s' criado e agendado.", name)
+				m.focus = focusPending
+				m.selectedSide = focusPending
+			} else {
+				m.message = fmt.Sprintf("erro ao criar '%s': %v", name, err)
+			}
+		}
 		m.reloadJobs()
 		return m, nil
 	}
@@ -484,6 +591,9 @@ func (m appModel) View() string {
 		title := fmt.Sprintf("apagar: %s", m.deleteJob.Name)
 		return m.renderModal(title, m.deleteForm.View())
 	}
+	if m.mode == modeCreate {
+		return m.renderModal("novo job", m.createForm.View())
+	}
 
 	headerText := fmt.Sprintf("jobs — %d pendente(s), %d no histórico — %s", len(m.pendingJobs), len(m.historyJobs), jobsDir)
 	if avail := m.width - 4; avail > 0 {
@@ -493,48 +603,80 @@ func (m appModel) View() string {
 
 	pendingView := colorizeStatusColumn(m.pendingTable.View(), m.pendingJobs, m.pendingTable.Cursor(), m.pendingStatusOffset, m.statusCellWidth)
 	pendingBox := panelStyle(m.focus == focusPending).Render(padLines(
-		titleStyle().Render("pendentes")+"\n\n"+pendingView, m.innerWidth,
+		titleStyle().Render("pendentes")+"\n\n"+pendingView, m.pendingInnerWidth,
 	))
 
 	historyView := colorizeStatusColumn(m.historyTable.View(), m.historyJobs, m.historyTable.Cursor(), m.historyStatusOffset, m.statusCellWidth)
 	historyBox := panelStyle(m.focus == focusHistory).Render(padLines(
-		titleStyle().Render("histórico")+"\n\n"+historyView, m.innerWidth,
+		titleStyle().Render("histórico")+"\n\n"+historyView, m.historyInnerWidth,
 	))
 
-	detailBox := panelStyle(false).Render(padLines(
-		titleStyle().Render("detalhes")+"\n\n"+m.renderDetailBody(), m.innerWidth,
+	// Pendentes and histórico sit side by side, 3:2 width split.
+	jobsRow := lipgloss.JoinHorizontal(lipgloss.Top, pendingBox, strings.Repeat(" ", panelGap), historyBox)
+
+	detailTitle := "detalhes"
+	if total := len(m.currentDetailLines()); total > m.detailMaxLines {
+		detailTitle = fmt.Sprintf("detalhes (%d–%d/%d)", m.detailScroll+1, min(m.detailScroll+m.detailMaxLines, total), total)
+	}
+	detailBox := panelStyle(m.focus == focusDetail).Render(padLines(
+		titleStyle().Render(detailTitle)+"\n\n"+m.renderDetailBody(), m.innerWidth,
 	))
 
-	help := "e reagendar · t pausar/retomar · d apagar · r atualizar · ctrl+j/k trocar painel · q sair"
+	help := "n novo · e reagendar · t pausar/retomar · d apagar · r atualizar · ctrl+h/j/k/l navegar · j/k rolar detalhes · q sair"
 	footerText := help
 	if m.message != "" {
 		footerText = m.message + "   " + help
 	}
+	// Must be pre-truncated like headerText above: footerStyle sets Width(),
+	// which word-wraps overflow instead of truncating it. An untruncated
+	// wrap silently turns the footer into 2 lines, breaking layout()'s fixed
+	// footerLines=1 budget and pushing everything above it (including the
+	// jobs row) up past the top of the altscreen.
+	if avail := m.width - 4; avail > 0 {
+		footerText = strings.TrimRight(padLines(footerText, avail), " ")
+	}
 	footer := footerStyle(m.width).Render(footerText)
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, pendingBox, historyBox, detailBox, footer)
+	return lipgloss.JoinVertical(lipgloss.Left, header, jobsRow, detailBox, footer)
 }
 
-func (m appModel) renderDetailBody() string {
+// currentDetailLines is the full (unscrolled, unclipped) detail text for
+// currentJob(), split into lines — shared by renderDetailBody, maxDetailScroll,
+// and the title's scroll-position indicator so they never disagree about
+// line count.
+func (m appModel) currentDetailLines() []string {
 	job := m.currentJob()
 	if job == nil {
-		return dimStyle().Render(fmt.Sprintf("Nenhum job em %s (pendentes ou histórico).", jobsDir))
+		return nil
 	}
 	kind, label := job.Status()
 	styled := statusStyle(kind).Render(statusGlyph(kind) + " " + label)
-	return truncateLines(job.DetailText(styled), m.detailMaxLines)
+	return strings.Split(job.DetailText(styled), "\n")
 }
 
-// truncateLines caps body to at most max lines, marking the cut so it reads
-// as "there's more, go look at the file" rather than a silent clip.
-func truncateLines(body string, max int) string {
-	lines := strings.Split(body, "\n")
-	if len(lines) <= max || max <= 1 {
-		return body
+// maxDetailScroll is the highest detailScroll that still leaves the last
+// line visible — scrolling past it would just show trailing blank space.
+func (m appModel) maxDetailScroll() int {
+	if n := len(m.currentDetailLines()) - m.detailMaxLines; n > 0 {
+		return n
 	}
-	lines = lines[:max-1]
-	lines = append(lines, dimStyle().Render("… (cortado — veja o arquivo original)"))
-	return strings.Join(lines, "\n")
+	return 0
+}
+
+func (m appModel) renderDetailBody() string {
+	lines := m.currentDetailLines()
+	if lines == nil {
+		return dimStyle().Render(fmt.Sprintf("Nenhum job em %s (pendentes ou histórico).", jobsDir))
+	}
+	scroll := m.detailScroll
+	if max := m.maxDetailScroll(); scroll > max {
+		scroll = max
+	}
+	end := scroll + m.detailMaxLines
+	if end > len(lines) {
+		end = len(lines)
+	}
+	return strings.Join(lines[scroll:end], "\n")
 }
 
 // colorizeStatusColumn re-colors the status column of an already-rendered

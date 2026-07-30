@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -152,6 +153,63 @@ func TestDeleteWithFiles(t *testing.T) {
 	}
 	if _, err := os.Stat(job.Dir); !os.IsNotExist(err) {
 		t.Fatal("job dir should have been removed")
+	}
+}
+
+func TestCreateJob(t *testing.T) {
+	hasRealSystemd(t)
+	name := "zz-jobs-tui-test-create"
+
+	realHome, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	realSystemdDir := filepath.Join(realHome, ".config", "systemd", "user")
+
+	origJobsDir, origSystemdDir := jobsDir, systemdUserDir
+	jobsDir = t.TempDir()
+	systemdUserDir = realSystemdDir
+	t.Cleanup(func() {
+		systemctlUser("disable", "--now", name+".timer")
+		os.Remove(filepath.Join(systemdUserDir, name+".timer"))
+		os.Remove(filepath.Join(systemdUserDir, name+".service"))
+		systemctlUser("daemon-reload")
+		jobsDir, systemdUserDir = origJobsDir, origSystemdDir
+	})
+
+	now := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+	if err := createJob(name, "echo hello", "some notes", 30, 9, 15, 6, now); err != nil {
+		t.Fatal(err)
+	}
+
+	jobs := discoverJobs()
+	job := findJob(jobs, name)
+	if job.TimerPath == "" {
+		t.Fatal("expected created job to have a timer")
+	}
+	if !job.Enabled() {
+		t.Fatal("expected created job to start enabled")
+	}
+	if want := "2026-06-15 09:30:00"; job.OnCalendar != want {
+		t.Fatalf("OnCalendar = %q, want %q", job.OnCalendar, want)
+	}
+	if job.Body == "" {
+		t.Fatal("expected notes to produce a body file")
+	}
+
+	data, err := os.ReadFile(job.Script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "echo hello") {
+		t.Fatal("expected script to contain the provided command")
+	}
+	if !strings.Contains(string(data), "disable --now") {
+		t.Fatal("expected script to contain the self-cleanup block")
+	}
+
+	if err := createJob(name, "echo hello again", "", 30, 9, 15, 6, now); err == nil {
+		t.Fatal("expected creating a duplicate-named job to fail")
 	}
 }
 

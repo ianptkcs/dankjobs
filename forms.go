@@ -80,6 +80,52 @@ func newEditForm(j Job) *huh.Form {
 		WithWidth(40)
 }
 
+func validateNonEmpty(s string) error {
+	if strings.TrimSpace(s) == "" {
+		return fmt.Errorf("obrigatório")
+	}
+	return nil
+}
+
+func newCreateForm() *huh.Form {
+	name, date, timeStr, commands, notes := "", "", "", "", ""
+	return huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Key("name").
+				Title("Nome do job").
+				Placeholder("minha-tarefa").
+				Value(&name).
+				Validate(validateJobName),
+			huh.NewInput().
+				Key("date").
+				Title("Data (DD/MM)").
+				Placeholder("17/07").
+				Value(&date).
+				Validate(validateDDMM),
+			huh.NewInput().
+				Key("time").
+				Title("Hora (HH:MM)").
+				Placeholder("14:00").
+				Value(&timeStr).
+				Validate(validateHHMM),
+			huh.NewText().
+				Key("commands").
+				Title("Comando(s) a executar (bash)").
+				Placeholder("git add ...\ngit commit -m ...").
+				Value(&commands).
+				Validate(validateNonEmpty),
+			huh.NewText().
+				Key("notes").
+				Title("Notas (opcional)").
+				Value(&notes),
+		),
+	).
+		WithTheme(huh.ThemeCatppuccin()).
+		WithShowHelp(true).
+		WithWidth(60)
+}
+
 const (
 	deleteChoiceCron   = "cron"
 	deleteChoiceAll    = "all"
