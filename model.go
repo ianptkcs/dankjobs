@@ -21,13 +21,13 @@ const (
 	modeCreate
 )
 
-// panelFocus selects which of the three panels (pendentes, histórico, or
-// detalhes) currently receives key input — neovim-style pane navigation:
-// Ctrl+h/l move between the side-by-side pendentes/histórico panels,
-// Ctrl+j/k move down into detalhes and back up. focusDetail is a dead end
+// panelFocus selects which of the three panels (pending, history, or
+// details) currently receives key input — neovim-style pane navigation:
+// Ctrl+h/l move between the side-by-side pending/history panels,
+// Ctrl+j/k move down into details and back up. focusDetail is a dead end
 // for currentJob(): selectedSide (below) keeps tracking whichever of
-// pendentes/histórico was last active, so the detail view keeps showing
-// that job while focus is parked on detalhes.
+// pending/history was last active, so the detail view keeps showing
+// that job while focus is parked on details.
 type panelFocus int
 
 const (
@@ -39,8 +39,8 @@ const (
 // Column widths (content width, before bubbles/table's default Padding(0,1)
 // adds 2 on each side). "name" flexes to fill whatever's left of the panel.
 const (
-	scheduleColWidth = 13 // "agendado para" header, pending panel
-	statusColWidth   = 10 // "concluído" is the longest status label
+	scheduleColWidth = 13 // "scheduled for" header, pending panel
+	statusColWidth   = 8  // "removed" is the longest status label
 	whenColWidth     = 11 // "27/07 14:32"
 	minNameColWidth  = 12
 )
@@ -58,10 +58,10 @@ const (
 	detailBoxOverhead = 2 + 1 + 1
 	minVisibleRows    = 2
 	minDetailLines    = 3
-	// Share of body height given to the pendentes/histórico row (both
+	// Share of body height given to the pending/history row (both
 	// panels sit side by side in that row, same height).
 	jobsRowPercent = 45
-	// pendentes:histórico WIDTH ratio, side by side in that row.
+	// pending:history WIDTH ratio, side by side in that row.
 	pendingWidthShare  = 3
 	historyWidthShare  = 2
 	panelGap           = 1
@@ -75,20 +75,20 @@ type appModel struct {
 	pendingTable table.Model
 	historyTable table.Model
 	focus        panelFocus
-	// selectedSide is which of pendentes/histórico currentJob() reads
+	// selectedSide is which of pending/history currentJob() reads
 	// from — always focusPending or focusHistory, never focusDetail. It
-	// only changes on Ctrl+h/l, so it survives a Ctrl+j trip into detalhes.
+	// only changes on Ctrl+h/l, so it survives a Ctrl+j trip into details.
 	selectedSide panelFocus
 	// detailScroll is the first visible line of the current job's detail
-	// text, adjusted by j/k (or the arrow keys) while focus is on detalhes.
+	// text, adjusted by j/k (or the arrow keys) while focus is on details.
 	detailScroll int
 
 	mode       mode
 	width      int
 	height     int
 	innerWidth int // content width for header/detail/footer (full width)
-	// Content width of each side-by-side panel — pendentes gets a 3:2 share
-	// of the row over histórico.
+	// Content width of each side-by-side panel — pending gets a 3:2 share
+	// of the row over history.
 	pendingInnerWidth int
 	historyInnerWidth int
 	detailMaxLines    int
@@ -175,8 +175,8 @@ func (m *appModel) currentJob() *Job {
 	return &jobs[idx]
 }
 
-// reloadJobs re-scans ~/jobs, splits jobs into "pendentes" (still on an
-// active or paused timer) and "histórico" (resolved — completed, failed, or
+// reloadJobs re-scans ~/jobs, splits jobs into "pending" (still on an
+// active or paused timer) and "history" (resolved — completed, failed, or
 // removed before ever running), and rebuilds both tables, keeping each
 // one's cursor on its previously selected job by name instead of resetting
 // to row 0.
@@ -244,8 +244,8 @@ func indexOfName(jobs []Job, name string) int {
 // layout recomputes column widths for both tables (so each one's rendered
 // width exactly matches its panel's inner width — a mismatch there makes
 // lipgloss hard-wrap rows mid-line) and the vertical space budget across the
-// jobs row + detalhes panel, so header + jobs row + detalhes + footer never
-// exceeds m.height. Pendentes and histórico sit side by side in the same
+// jobs row + details panel, so header + jobs row + details + footer never
+// exceeds m.height. Pending and history sit side by side in the same
 // row, splitting its width 2:1.
 func (m *appModel) layout() {
 	m.innerWidth = m.width - 4
@@ -275,7 +275,7 @@ func (m *appModel) layout() {
 	}
 	m.pendingTable.SetColumns([]table.Column{
 		{Title: "job", Width: pendingNameWidth},
-		{Title: "agendado para", Width: scheduleColWidth},
+		{Title: "scheduled for", Width: scheduleColWidth},
 		{Title: "status", Width: statusColWidth},
 	})
 	m.pendingTable.SetWidth(m.pendingInnerWidth)
@@ -286,8 +286,8 @@ func (m *appModel) layout() {
 		historyNameWidth = minNameColWidth
 	}
 	m.historyTable.SetColumns([]table.Column{
-		{Title: "nome", Width: historyNameWidth},
-		{Title: "data", Width: whenColWidth},
+		{Title: "name", Width: historyNameWidth},
+		{Title: "date", Width: whenColWidth},
 		{Title: "status", Width: statusColWidth},
 	})
 	m.historyTable.SetWidth(m.historyInnerWidth)
@@ -366,14 +366,14 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "r":
 		m.reloadJobs()
-		m.message = "Lista atualizada."
+		m.message = "List refreshed."
 		return m, nil
 	case "n":
 		m.createForm = newCreateForm()
 		m.mode = modeCreate
 		return m, m.createForm.Init()
 	// Neovim-style pane navigation: Ctrl+h/l move between the side-by-side
-	// pendentes/histórico panels; Ctrl+j/k move down into detalhes and back
+	// pending/history panels; Ctrl+j/k move down into details and back
 	// up. No-op when there's no pane in that direction, same as
 	// vim-tmux-navigator.
 	case "ctrl+h":
@@ -400,7 +400,7 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if job.TimerPath == "" {
-			m.message = fmt.Sprintf("'%s' não tem timer pra reagendar.", job.Name)
+			m.message = fmt.Sprintf("'%s' has no timer to reschedule.", job.Name)
 			return m, nil
 		}
 		jobCopy := *job
@@ -414,15 +414,15 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if job.TimerPath == "" {
-			m.message = fmt.Sprintf("'%s' não tem timer.", job.Name)
+			m.message = fmt.Sprintf("'%s' has no timer.", job.Name)
 			return m, nil
 		}
 		toggleJob(*job)
 		wasEnabled := job.Enabled()
 		m.reloadJobs()
-		state := "pausado"
+		state := "paused"
 		if !wasEnabled {
-			state = "ativado"
+			state = "resumed"
 		}
 		m.message = fmt.Sprintf("'%s' %s.", job.Name, state)
 		return m, nil
@@ -438,7 +438,7 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.deleteForm.Init()
 	}
 
-	// Detalhes has no table of its own — j/k (and the arrow keys) scroll its
+	// Details has no table of its own — j/k (and the arrow keys) scroll its
 	// text by one line instead of moving a cursor. Any other key while
 	// focused there is simply ignored.
 	if m.focus == focusDetail {
@@ -495,7 +495,7 @@ func (m appModel) updateEdit(msg tea.Msg) (tea.Model, tea.Cmd) {
 		hour, minute, errT := parseHHMM(m.editForm.GetString("time"))
 		if errD == nil && errT == nil {
 			if err := rescheduleJob(*m.editJob, minute, hour, dom, month, time.Now()); err == nil {
-				m.message = fmt.Sprintf("'%s' reagendado para %02d/%02d %02d:%02d.", m.editJob.Name, dom, month, hour, minute)
+				m.message = fmt.Sprintf("'%s' rescheduled for %02d/%02d %02d:%02d.", m.editJob.Name, dom, month, hour, minute)
 			}
 		}
 		m.mode = modeList
@@ -531,11 +531,11 @@ func (m appModel) updateCreate(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if errD == nil && errT == nil {
 			if err := createJob(name, commands, notes, minute, hour, dom, month, time.Now()); err == nil {
-				m.message = fmt.Sprintf("'%s' criado e agendado.", name)
+				m.message = fmt.Sprintf("'%s' created and scheduled.", name)
 				m.focus = focusPending
 				m.selectedSide = focusPending
 			} else {
-				m.message = fmt.Sprintf("erro ao criar '%s': %v", name, err)
+				m.message = fmt.Sprintf("error creating '%s': %v", name, err)
 			}
 		}
 		m.reloadJobs()
@@ -568,11 +568,11 @@ func (m appModel) updateDelete(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch choice {
 		case deleteChoiceCron, deleteChoiceAll:
 			if err := deleteJob(job, choice == deleteChoiceAll); err == nil {
-				scope := "só agendamento"
+				scope := "schedule only"
 				if choice == deleteChoiceAll {
-					scope = "agendamento + arquivos"
+					scope = "schedule + files"
 				}
-				m.message = fmt.Sprintf("'%s' removido (%s).", job.Name, scope)
+				m.message = fmt.Sprintf("'%s' removed (%s).", job.Name, scope)
 			}
 			m.reloadJobs()
 		}
@@ -584,18 +584,18 @@ func (m appModel) updateDelete(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m appModel) View() string {
 	if m.mode == modeEdit {
-		title := fmt.Sprintf("reagendar: %s", m.editJob.Name)
+		title := fmt.Sprintf("reschedule: %s", m.editJob.Name)
 		return m.renderModal(title, m.editForm.View())
 	}
 	if m.mode == modeDelete {
-		title := fmt.Sprintf("apagar: %s", m.deleteJob.Name)
+		title := fmt.Sprintf("delete: %s", m.deleteJob.Name)
 		return m.renderModal(title, m.deleteForm.View())
 	}
 	if m.mode == modeCreate {
-		return m.renderModal("novo job", m.createForm.View())
+		return m.renderModal("new job", m.createForm.View())
 	}
 
-	headerText := fmt.Sprintf("jobs — %d pendente(s), %d no histórico — %s", len(m.pendingJobs), len(m.historyJobs), jobsDir)
+	headerText := fmt.Sprintf("jobs — %d pending, %d in history — %s", len(m.pendingJobs), len(m.historyJobs), jobsDir)
 	if avail := m.width - 4; avail > 0 {
 		headerText = strings.TrimRight(padLines(headerText, avail), " ")
 	}
@@ -603,26 +603,26 @@ func (m appModel) View() string {
 
 	pendingView := colorizeStatusColumn(m.pendingTable.View(), m.pendingJobs, m.pendingTable.Cursor(), m.pendingStatusOffset, m.statusCellWidth)
 	pendingBox := panelStyle(m.focus == focusPending).Render(padLines(
-		titleStyle().Render("pendentes")+"\n\n"+pendingView, m.pendingInnerWidth,
+		titleStyle().Render("pending")+"\n\n"+pendingView, m.pendingInnerWidth,
 	))
 
 	historyView := colorizeStatusColumn(m.historyTable.View(), m.historyJobs, m.historyTable.Cursor(), m.historyStatusOffset, m.statusCellWidth)
 	historyBox := panelStyle(m.focus == focusHistory).Render(padLines(
-		titleStyle().Render("histórico")+"\n\n"+historyView, m.historyInnerWidth,
+		titleStyle().Render("history")+"\n\n"+historyView, m.historyInnerWidth,
 	))
 
-	// Pendentes and histórico sit side by side, 3:2 width split.
+	// Pending and history sit side by side, 3:2 width split.
 	jobsRow := lipgloss.JoinHorizontal(lipgloss.Top, pendingBox, strings.Repeat(" ", panelGap), historyBox)
 
-	detailTitle := "detalhes"
+	detailTitle := "details"
 	if total := len(m.currentDetailLines()); total > m.detailMaxLines {
-		detailTitle = fmt.Sprintf("detalhes (%d–%d/%d)", m.detailScroll+1, min(m.detailScroll+m.detailMaxLines, total), total)
+		detailTitle = fmt.Sprintf("details (%d–%d/%d)", m.detailScroll+1, min(m.detailScroll+m.detailMaxLines, total), total)
 	}
 	detailBox := panelStyle(m.focus == focusDetail).Render(padLines(
 		titleStyle().Render(detailTitle)+"\n\n"+m.renderDetailBody(), m.innerWidth,
 	))
 
-	help := "n novo · e reagendar · t pausar/retomar · d apagar · r atualizar · ctrl+h/j/k/l navegar · j/k rolar detalhes · q sair"
+	help := "n new · e reschedule · t pause/resume · d delete · r refresh · ctrl+h/j/k/l navigate · j/k scroll details · q quit"
 	footerText := help
 	if m.message != "" {
 		footerText = m.message + "   " + help
@@ -666,7 +666,7 @@ func (m appModel) maxDetailScroll() int {
 func (m appModel) renderDetailBody() string {
 	lines := m.currentDetailLines()
 	if lines == nil {
-		return dimStyle().Render(fmt.Sprintf("Nenhum job em %s (pendentes ou histórico).", jobsDir))
+		return dimStyle().Render(fmt.Sprintf("No jobs in %s (pending or history).", jobsDir))
 	}
 	scroll := m.detailScroll
 	if max := m.maxDetailScroll(); scroll > max {

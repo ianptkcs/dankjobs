@@ -1,101 +1,100 @@
-# Como criar um job para o djobs
+# How to create a job for djobs
 
-Este documento existe para que uma IA (ou uma pessoa) consiga criar um job
-compatível com o djobs manualmente, sem abrir a TUI — por exemplo dentro
-de um agente que precisa agendar uma tarefa de terminal para depois. Se você
-tem a TUI à mão, é mais simples apertar `n` dentro dela (veja o final deste
-documento); o que segue é o formato que ela espera encontrar no disco.
+This document exists so an AI (or a person) can create a job compatible
+with djobs by hand, without opening the TUI — for example inside an agent
+that needs to schedule a terminal task for later. If you have the TUI at
+hand, it's simpler to just press `n` inside it (see the end of this
+document); what follows is the format it expects to find on disk.
 
-## O que o djobs enxerga
+## What djobs sees
 
-O djobs varre um diretório de jobs (`~/jobs` por padrão, configurável via
-`DJOBS_JOBS_DIR`) procurando subdiretórios, e casa cada um por nome com um
-par opcional de units systemd `--user` num segundo diretório (
-`~/.config/systemd/user` por padrão, configurável via `DJOBS_SYSTEMD_DIR`).
-Não há nenhum arquivo de metadado separado — todo o estado é inferido do
-sistema de arquivos + do systemd.
+djobs scans a jobs directory (`~/jobs` by default, configurable via
+`DJOBS_JOBS_DIR`) looking for subdirectories, and matches each one by name
+with an optional pair of `--user` systemd units in a second directory
+(`~/.config/systemd/user` by default, configurable via `DJOBS_SYSTEMD_DIR`).
+There's no separate metadata file — all state is inferred from the
+filesystem + systemd.
 
-Layout esperado por job, em `<jobs-dir>/<nome-do-job>/`:
+Expected layout per job, at `<jobs-dir>/<job-name>/`:
 
-- `<nome-do-job>.sh` — o script que faz o trabalho de fato.
-- `<nome-do-job>-body.txt` (ou qualquer `*body*.txt`, e como fallback
-  `*.txt`) — notas/descrição livres, opcionais, mostradas no painel de
-  detalhes.
-- `<nome-do-job>.log` — opcional. Escrever aqui é o que deixa um registro no
-  histórico: a presença desse arquivo (já sem timer) é o que marca um job
-  como "concluído" em vez de "removido".
+- `<job-name>.sh` — the script that does the actual work.
+- `<job-name>-body.txt` (or any `*body*.txt`, falling back to `*.txt`) —
+  free-form notes/description, optional, shown in the details panel.
+- `<job-name>.log` — optional. Writing here is what leaves a record in
+  history: the presence of this file (with no timer left) is what marks a
+  job as "done" instead of "removed".
 
-Enquanto o job ainda está agendado, existe também o par de units em
+While the job is still scheduled, the pair of units also exists at
 `~/.config/systemd/user/`:
 
 ```
-~/jobs/minha-tarefa/
-  minha-tarefa.sh
-  minha-tarefa.log
-  minha-tarefa-body.txt
+~/jobs/my-task/
+  my-task.sh
+  my-task.log
+  my-task-body.txt
 
 ~/.config/systemd/user/
-  minha-tarefa.timer
-  minha-tarefa.service
+  my-task.timer
+  my-task.service
 ```
 
-## Os cinco estados que o djobs infere
+## The five states djobs infers
 
-- **ativo** — timer existe, unit habilitada.
-- **pausado** — timer existe, unit desabilitada (mas o service nunca chegou
-  a rodar e falhar).
-- **concluído** — timer/service já não existem, e há um `.log`.
-- **falha** — timer/service ainda existem, mas o `ActiveState` do service é
-  `failed` (ele rodou e saiu com erro).
-- **removido** — timer/service já não existem, e não há `.log` (agendamento
-  apagado, ou nunca chegou a existir, antes de rodar).
+- **active** — timer exists, unit enabled.
+- **paused** — timer exists, unit disabled (but the service never got to
+  run and fail).
+- **done** — timer/service no longer exist, and there's a `.log`.
+- **failed** — timer/service still exist, but the service's `ActiveState`
+  is `failed` (it ran and exited with an error).
+- **removed** — timer/service no longer exist, and there's no `.log`
+  (schedule deleted, or it never existed, before ever running).
 
-**A consequência prática disso**: o próprio script do job é responsável por
-remover as suas units systemd quando termina com sucesso. Se ele não fizer
-essa auto-limpeza, o job fica para sempre em "pendentes" mesmo depois de já
-ter rodado — não existe nenhum outro jeito do djobs saber que ele
-terminou bem.
+**The practical consequence of this**: the job script itself is
+responsible for removing its own systemd units when it finishes
+successfully. If it doesn't do this self-cleanup, the job stays in
+"pending" forever even after it already ran — there's no other way for
+djobs to know it finished well.
 
-## Template do script
+## Script template
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 
-JOB_NAME="minha-tarefa"
+JOB_NAME="my-task"
 
-# ... o trabalho de fato vai aqui ...
+# ... the actual work goes here ...
 
-# auto-remove o par de units systemd ao terminar (one-shot, não recorrente)
+# self-remove the systemd unit pair once done (one-shot, not recurring)
 systemctl --user disable --now "${JOB_NAME}.timer" 2>/dev/null || true
 rm -f "$HOME/.config/systemd/user/${JOB_NAME}.timer" "$HOME/.config/systemd/user/${JOB_NAME}.service"
 systemctl --user daemon-reload
 ```
 
-`set -euo pipefail` importa além da segurança de sempre: é o que permite
-distinguir "falha" de "removido". Um script que morre no meio do caminho
-nunca chega até a linha de auto-limpeza, então deixa as units para trás
-exatamente como um job pausado deixaria — e o djobs usa o
-`ActiveState` do service pra diferenciar os dois casos.
+`set -euo pipefail` matters beyond the usual safety net: it's what makes
+telling "failed" apart from "removed" possible. A script that dies partway
+through never reaches the self-cleanup line, so it leaves the units behind
+exactly like a merely-paused job would — and djobs uses the service's
+`ActiveState` to tell the two cases apart.
 
-## As duas units systemd
+## The two systemd units
 
 ```ini
-# ~/.config/systemd/user/minha-tarefa.service
+# ~/.config/systemd/user/my-task.service
 [Unit]
-Description=minha-tarefa
+Description=my-task
 
 [Service]
 Type=oneshot
-ExecStart=/home/usuario/jobs/minha-tarefa/minha-tarefa.sh
-StandardOutput=append:/home/usuario/jobs/minha-tarefa/minha-tarefa.log
-StandardError=append:/home/usuario/jobs/minha-tarefa/minha-tarefa.log
+ExecStart=/home/user/jobs/my-task/my-task.sh
+StandardOutput=append:/home/user/jobs/my-task/my-task.log
+StandardError=append:/home/user/jobs/my-task/my-task.log
 ```
 
 ```ini
-# ~/.config/systemd/user/minha-tarefa.timer
+# ~/.config/systemd/user/my-task.timer
 [Unit]
-Description=minha-tarefa
+Description=my-task
 
 [Timer]
 OnCalendar=2026-08-05 14:00:00
@@ -105,25 +104,25 @@ Persistent=true
 WantedBy=timers.target
 ```
 
-`OnCalendar` recebe um timestamp absoluto para um job one-shot — vale a pena
-validar antes com `systemd-analyze calendar "<timestamp>"`. `Persistent=true`
-é o que faz um disparo perdido (máquina desligada ou suspensa no horário
-marcado) rodar assim que a máquina voltar, em vez de ser silenciosamente
-pulado como o cron comum faria.
+`OnCalendar` takes an absolute timestamp for a one-shot job — worth
+validating first with `systemd-analyze calendar "<timestamp>"`.
+`Persistent=true` is what makes a missed run (machine off or asleep at the
+scheduled time) fire as soon as the machine is back, instead of being
+silently skipped like plain cron would.
 
-Depois de escrever os dois arquivos:
+After writing both files:
 
 ```bash
 systemctl --user daemon-reload
-systemctl --user enable --now minha-tarefa.timer
+systemctl --user enable --now my-task.timer
 ```
 
-Isso depende do "lingering" do `loginctl` estar habilitado para o usuário
-(`loginctl show-user "$USER" --property=Linger` deve retornar `yes`), senão
-a unit não dispara sem uma sessão de login ativa.
+This depends on `loginctl` lingering being enabled for the user
+(`loginctl show-user "$USER" --property=Linger` should return `yes`),
+otherwise the unit won't fire without an active login session.
 
-## Ou simplesmente use o djobs
+## Or just use djobs
 
-Se a TUI estiver disponível, aperte `n` — ela pede o nome, a data/hora e o(s)
-comando(s) a executar, e já escreve o script (com o bloco de auto-limpeza
-acima embutido), as duas units e habilita o timer por você.
+If the TUI is available, press `n` — it asks for the name, date/time, and
+the command(s) to run, and writes the script (with the self-cleanup block
+above already baked in), both units, and enables the timer for you.

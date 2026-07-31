@@ -32,10 +32,10 @@ var jobNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 // and createJob itself.
 func validateJobName(name string) error {
 	if !jobNameRe.MatchString(name) {
-		return fmt.Errorf("use letras, números, - ou _ (começando com letra/número)")
+		return fmt.Errorf("use letters, numbers, - or _ (starting with a letter or number)")
 	}
 	if _, err := os.Stat(filepath.Join(jobsDir, name)); err == nil {
-		return fmt.Errorf("já existe um job '%s'", name)
+		return fmt.Errorf("a job named '%s' already exists", name)
 	}
 	return nil
 }
@@ -199,21 +199,21 @@ const (
 func (j Job) Status() (jobStatusKind, string) {
 	if j.TimerPath != "" {
 		if j.ServiceActiveState == "failed" {
-			return statusFailed, "falha"
+			return statusFailed, "failed"
 		}
 		if j.Enabled() {
-			return statusActive, "ativo"
+			return statusActive, "active"
 		}
-		return statusPaused, "pausado"
+		return statusPaused, "paused"
 	}
 	if j.Log != "" {
-		return statusCompleted, "concluído"
+		return statusCompleted, "done"
 	}
-	return statusRemoved, "removido"
+	return statusRemoved, "removed"
 }
 
 // IsPending reports whether j still has a live, unresolved schedule —
-// i.e. belongs in the "pendentes" panel rather than "histórico".
+// i.e. belongs in the "pending" panel rather than "history".
 func (j Job) IsPending() bool {
 	kind, _ := j.Status()
 	return kind == statusActive || kind == statusPaused
@@ -221,7 +221,7 @@ func (j Job) IsPending() bool {
 
 // HistoryWhen returns when a non-pending job was last touched — the log's
 // mtime (when it finished running) if there is one, else the job
-// directory's own mtime — for display in the histórico panel. historyModTime
+// directory's own mtime — for display in the history panel. historyModTime
 // returns the same thing as a time.Time, for sorting.
 func (j Job) HistoryWhen() string {
 	t := j.historyModTime()
@@ -252,10 +252,10 @@ func (j Job) DetailText(statusLabel string) string {
 	if j.TimerPath != "" {
 		fmt.Fprintf(&b, "\ntimer: %s  [%s]\n", j.OnCalendar, statusLabel)
 		if j.NextElapse != "" {
-			fmt.Fprintf(&b, "próxima execução: %s\n", j.NextElapse)
+			fmt.Fprintf(&b, "next run: %s\n", j.NextElapse)
 		}
 		if j.Script != "" {
-			fmt.Fprintf(&b, "comando: %s\n", j.Script)
+			fmt.Fprintf(&b, "command: %s\n", j.Script)
 		}
 	} else {
 		fmt.Fprintf(&b, "\nstatus: %s   (%s)\n", statusLabel, j.HistoryWhen())
@@ -263,7 +263,7 @@ func (j Job) DetailText(statusLabel string) string {
 
 	if j.Body != "" {
 		if data, err := os.ReadFile(j.Body); err == nil {
-			fmt.Fprintf(&b, "\n--- corpo/notas ---\n%s\n", strings.TrimSpace(string(data)))
+			fmt.Fprintf(&b, "\n--- notes ---\n%s\n", strings.TrimSpace(string(data)))
 		}
 	}
 	if j.Script != "" {
@@ -277,7 +277,7 @@ func (j Job) DetailText(statusLabel string) string {
 			if len(lines) > 25 {
 				lines = lines[len(lines)-25:]
 			}
-			fmt.Fprintf(&b, "\n--- log (fim) ---\n%s\n", strings.Join(lines, "\n"))
+			fmt.Fprintf(&b, "\n--- log (tail) ---\n%s\n", strings.Join(lines, "\n"))
 		}
 	}
 	return b.String()
@@ -339,7 +339,7 @@ func rescheduleJob(j Job, minute, hour, dom, month int, now time.Time) error {
 // discoverJobs expects (see instructions.md). The generated script ends
 // with the self-cleanup block that convention relies on: without it, a
 // successful run would leave the timer/service files behind and the job
-// would never move from "pendentes" to "histórico".
+// would never move from "pending" to "history".
 func createJob(name, commands, notes string, minute, hour, dom, month int, now time.Time) error {
 	if err := validateJobName(name); err != nil {
 		return err
