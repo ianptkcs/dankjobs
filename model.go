@@ -663,10 +663,15 @@ func (m appModel) maxDetailScroll() int {
 	return 0
 }
 
+// renderDetailBody always returns exactly m.detailMaxLines lines (padding
+// with blank ones when the job's detail text is shorter), so the details
+// panel renders at a constant height regardless of how much text the
+// current job has — otherwise the panel (and everything below it, i.e. the
+// footer) would grow or shrink as you move between jobs.
 func (m appModel) renderDetailBody() string {
 	lines := m.currentDetailLines()
 	if lines == nil {
-		return dimStyle().Render(fmt.Sprintf("No jobs in %s (pending or history).", jobsDir))
+		lines = []string{dimStyle().Render(fmt.Sprintf("No jobs in %s (pending or history).", jobsDir))}
 	}
 	scroll := m.detailScroll
 	if max := m.maxDetailScroll(); scroll > max {
@@ -676,7 +681,11 @@ func (m appModel) renderDetailBody() string {
 	if end > len(lines) {
 		end = len(lines)
 	}
-	return strings.Join(lines[scroll:end], "\n")
+	visible := append([]string{}, lines[scroll:end]...)
+	for len(visible) < m.detailMaxLines {
+		visible = append(visible, "")
+	}
+	return strings.Join(visible, "\n")
 }
 
 // colorizeStatusColumn re-colors the status column of an already-rendered
