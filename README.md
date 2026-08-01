@@ -1,5 +1,7 @@
 # Dank Jobs
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/ianptkcs)
+
 A [Bubble Tea](https://github.com/charmbracelet/bubbletea) TUI for browsing and
 managing "jobs" scheduled as systemd user timers — a lightweight pattern for
 deferring CLI/git work (finish this branch tonight, open that PR tomorrow at
@@ -181,6 +183,17 @@ itself (`jobs_test.go`) — it never touches a real scheduled job.
 See [CHANGELOG.md](CHANGELOG.md) for released versions, and
 [CONTRIBUTING.md](CONTRIBUTING.md#versioning-and-changelog) for the
 versioning policy.
+
+## Support
+
+- **Global**: [ko-fi.com/ianptkcs](https://ko-fi.com/ianptkcs)
+- **Brazil (Pix)**: scan the QR below or copy the code
+
+  ![Pix QR](pix-qr.png)
+
+  ```
+  00020126580014BR.GOV.BCB.PIX01365ad933b0-dcdc-4525-a736-0759902aeec65204000053039865802BR5925Ian Patrick da Costa Soar6009SAO PAULO62140510tQA85x6Dov63041FB6
+  ```
 
 ## License
 
