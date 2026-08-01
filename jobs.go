@@ -506,6 +506,9 @@ func createJob(name, commands, notes string, sched jobSchedule, now time.Time) e
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
+	if err := os.MkdirAll(systemdUserDir, 0o755); err != nil {
+		return err
+	}
 
 	scriptPath := filepath.Join(dir, name+".sh")
 	logPath := filepath.Join(dir, name+".log")

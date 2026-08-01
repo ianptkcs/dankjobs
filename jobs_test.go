@@ -30,6 +30,9 @@ func setupFixture(t *testing.T, name string) Job {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(systemdUserDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(dir, name+".sh"), []byte("#!/usr/bin/env bash\ntrue\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
