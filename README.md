@@ -85,7 +85,7 @@ own `n` create flow below.
 
 ## Install
 
-Requires Go 1.23+.
+Requires Go 1.26+.
 
 ```bash
 git clone https://github.com/ianptkcs/djobs.git
