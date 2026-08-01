@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-beta.2] - 2026-08-01
+
+### Changed
+
+- Side panels (recurring/pending/history) now split the row equally
+  (1:1:1), instead of favoring pending (2:3:2).
+
 ## [0.2.0-beta.1] - 2026-08-01
 
 ### Added
@@ -39,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and status-bar widgets.
 - DankMaterialShell accent-color integration, with `DJOBS_ACCENT` fallback.
 
-[Unreleased]: https://github.com/ianptkcs/djobs/compare/v0.2.0-beta.1...HEAD
+[Unreleased]: https://github.com/ianptkcs/djobs/compare/v0.2.0-beta.2...HEAD
+[0.2.0-beta.2]: https://github.com/ianptkcs/djobs/compare/v0.2.0-beta.1...v0.2.0-beta.2
 [0.2.0-beta.1]: https://github.com/ianptkcs/djobs/compare/v0.1.0...v0.2.0-beta.1
 [0.1.0]: https://github.com/ianptkcs/djobs/releases/tag/v0.1.0
