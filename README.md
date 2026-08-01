@@ -42,6 +42,8 @@ deleting a job for good — `d` offers Archive as well as Delete forever, and
 an archived job's directory just moves under `~/jobs/.archive/<name>/`
 (invisible to the normal panels) until `u` unarchives it back.
 
+![archived view](screenshot-archived.png)
+
 **details** shows everything djobs knows about the selected job: its
 directory, the timer's schedule/status and next elapse time (recurring and
 pending jobs only), the `<name>*body*.txt` notes and the job script's
