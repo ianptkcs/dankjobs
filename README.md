@@ -147,6 +147,12 @@ Job discovery, toggling, rescheduling and deletion are covered against a
 disposable fixture job + systemd timer that each test creates and tears down
 itself (`jobs_test.go`) — it never touches a real scheduled job.
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for released versions, and
+[CONTRIBUTING.md](CONTRIBUTING.md#versioning-and-changelog) for the
+versioning policy.
+
 ## License
 
 [GNU AGPL-3.0](LICENSE) — free and open source. If you run a modified
