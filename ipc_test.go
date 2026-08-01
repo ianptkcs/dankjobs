@@ -85,13 +85,13 @@ func TestIPCJobsNext(t *testing.T) {
 	})
 
 	now := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
-	if err := createJob(names[0], "true", "", 0, 9, 10, 3, now); err != nil {
+	if err := createJob(names[0], "true", "", jobSchedule{Kind: recurOneshot, Hour: 9, DOM: 10, Month: 3}, now); err != nil {
 		t.Fatal(err)
 	}
-	if err := createJob(names[1], "true", "", 0, 9, 5, 3, now); err != nil {
+	if err := createJob(names[1], "true", "", jobSchedule{Kind: recurOneshot, Hour: 9, DOM: 5, Month: 3}, now); err != nil {
 		t.Fatal(err)
 	}
-	if err := createJob(names[2], "true", "", 0, 9, 20, 3, now); err != nil {
+	if err := createJob(names[2], "true", "", jobSchedule{Kind: recurOneshot, Hour: 9, DOM: 20, Month: 3}, now); err != nil {
 		t.Fatal(err)
 	}
 
@@ -120,6 +120,68 @@ func TestIPCJobsNext(t *testing.T) {
 	}
 	if got.Name != soon {
 		t.Fatalf("jobs.next = %q, want %q (soonest active job)", got.Name, soon)
+	}
+}
+
+// TestIPCJobsNextExcludesRecurring guards against a real bug: a recurring
+// job's OnCalendar (e.g. "*-*-* 09:00:00") sorts before any one-shot job's
+// absolute-date OnCalendar as a plain string (since '*' < any digit), which
+// would make ipcJobsNext always report the recurring job as "soonest"
+// regardless of the one-shot's actual date. Recurring jobs must be excluded
+// from the candidate pool entirely.
+func TestIPCJobsNextExcludesRecurring(t *testing.T) {
+	hasRealSystemd(t)
+	realHome, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	realSystemdDir := filepath.Join(realHome, ".config", "systemd", "user")
+
+	origJobsDir, origSystemdDir := jobsDir, systemdUserDir
+	jobsDir = t.TempDir()
+	systemdUserDir = realSystemdDir
+
+	oneshotName := "zz-jobs-tui-test-ipc-next-oneshot"
+	dailyName := "zz-jobs-tui-test-ipc-next-daily"
+	t.Cleanup(func() {
+		for _, name := range []string{oneshotName, dailyName} {
+			systemctlUser("disable", "--now", name+".timer")
+			os.Remove(filepath.Join(systemdUserDir, name+".timer"))
+			os.Remove(filepath.Join(systemdUserDir, name+".service"))
+		}
+		systemctlUser("daemon-reload")
+		jobsDir, systemdUserDir = origJobsDir, origSystemdDir
+	})
+
+	now := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+	if err := createJob(dailyName, "true", "", jobSchedule{Kind: recurDaily, Hour: 9, Minute: 0}, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := createJob(oneshotName, "true", "", jobSchedule{Kind: recurOneshot, Hour: 9, DOM: 10, Month: 3}, now); err != nil {
+		t.Fatal(err)
+	}
+
+	orig := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	code := ipcJobsNext()
+	w.Close()
+	os.Stdout = orig
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d", code)
+	}
+	var got jobJSON
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("invalid json: %v\n%s", err, buf.String())
+	}
+	if got.Name != oneshotName {
+		t.Fatalf("jobs.next = %q, want %q (the recurring job must be excluded)", got.Name, oneshotName)
 	}
 }
 

@@ -87,8 +87,55 @@ func validateNonEmpty(s string) error {
 	return nil
 }
 
+func validateNonEmptyWeekdays(days []time.Weekday) error {
+	if len(days) == 0 {
+		return fmt.Errorf("select at least one day")
+	}
+	return nil
+}
+
+func validateDayOfMonth(s string) error {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil || n < 1 || n > 31 {
+		return fmt.Errorf("expected a number 1-31")
+	}
+	return nil
+}
+
+// parseCycle parses a custom recurrence cycle like "2 4 5" (run, wait 2
+// days, run, wait 4, run, wait 5, repeat) into its day-interval sequence.
+func parseCycle(s string) ([]int, error) {
+	fields := strings.Fields(s)
+	if len(fields) == 0 {
+		return nil, fmt.Errorf(`expected one or more day counts, e.g. "2 4 5"`)
+	}
+	cycle := make([]int, len(fields))
+	for i, f := range fields {
+		n, err := strconv.Atoi(f)
+		if err != nil || n < 1 {
+			return nil, fmt.Errorf(`expected positive whole numbers, e.g. "2 4 5"`)
+		}
+		cycle[i] = n
+	}
+	return cycle, nil
+}
+
+func validateCycle(s string) error {
+	_, err := parseCycle(s)
+	return err
+}
+
+// newCreateForm builds the job-creation form. "date"/"time" (and, for the
+// custom-cycle branch, "date" again) are reused as Keys across several
+// mutually-exclusive groups rather than given per-kind names: huh's group
+// navigation skips hidden groups entirely (see WithHideFunc below), so a
+// hidden group's fields never write into the form's result set — only
+// whichever branch the user actually walked through does.
 func newCreateForm() *huh.Form {
-	name, date, timeStr, commands, notes := "", "", "", "", ""
+	name, date, timeStr, commands, notes, cycleStr, dayOfMonth := "", "", "", "", "", "", ""
+	kind := recurOneshot
+	var weekdays []time.Weekday
+
 	return huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
@@ -97,6 +144,19 @@ func newCreateForm() *huh.Form {
 				Placeholder("my-task").
 				Value(&name).
 				Validate(validateJobName),
+			huh.NewSelect[RecurrenceKind]().
+				Key("type").
+				Title("Recurrence").
+				Options(
+					huh.NewOption("One-shot", recurOneshot),
+					huh.NewOption("Daily", recurDaily),
+					huh.NewOption("Weekly", recurWeekly),
+					huh.NewOption("Monthly", recurMonthly),
+					huh.NewOption("Custom cycle", recurCycle),
+				).
+				Value(&kind),
+		),
+		huh.NewGroup(
 			huh.NewInput().
 				Key("date").
 				Title("Date (DD/MM)").
@@ -109,6 +169,72 @@ func newCreateForm() *huh.Form {
 				Placeholder("14:00").
 				Value(&timeStr).
 				Validate(validateHHMM),
+		).WithHideFunc(func() bool { return kind != recurOneshot }),
+		huh.NewGroup(
+			huh.NewInput().
+				Key("time").
+				Title("Time (HH:MM)").
+				Placeholder("14:00").
+				Value(&timeStr).
+				Validate(validateHHMM),
+		).WithHideFunc(func() bool { return kind != recurDaily }),
+		huh.NewGroup(
+			huh.NewMultiSelect[time.Weekday]().
+				Key("weekdays").
+				Title("Days of the week").
+				Options(
+					huh.NewOption("Mon", time.Monday),
+					huh.NewOption("Tue", time.Tuesday),
+					huh.NewOption("Wed", time.Wednesday),
+					huh.NewOption("Thu", time.Thursday),
+					huh.NewOption("Fri", time.Friday),
+					huh.NewOption("Sat", time.Saturday),
+					huh.NewOption("Sun", time.Sunday),
+				).
+				Value(&weekdays).
+				Validate(validateNonEmptyWeekdays),
+			huh.NewInput().
+				Key("time").
+				Title("Time (HH:MM)").
+				Placeholder("14:00").
+				Value(&timeStr).
+				Validate(validateHHMM),
+		).WithHideFunc(func() bool { return kind != recurWeekly }),
+		huh.NewGroup(
+			huh.NewInput().
+				Key("dayOfMonth").
+				Title("Day of month (1-31)").
+				Placeholder("15").
+				Value(&dayOfMonth).
+				Validate(validateDayOfMonth),
+			huh.NewInput().
+				Key("time").
+				Title("Time (HH:MM)").
+				Placeholder("14:00").
+				Value(&timeStr).
+				Validate(validateHHMM),
+		).WithHideFunc(func() bool { return kind != recurMonthly }),
+		huh.NewGroup(
+			huh.NewInput().
+				Key("cycle").
+				Title(`Day-interval cycle (e.g. "2 4 5")`).
+				Placeholder("2 4 5").
+				Value(&cycleStr).
+				Validate(validateCycle),
+			huh.NewInput().
+				Key("date").
+				Title("First run date (DD/MM)").
+				Placeholder("17/07").
+				Value(&date).
+				Validate(validateDDMM),
+			huh.NewInput().
+				Key("time").
+				Title("First run time (HH:MM)").
+				Placeholder("14:00").
+				Value(&timeStr).
+				Validate(validateHHMM),
+		).WithHideFunc(func() bool { return kind != recurCycle }),
+		huh.NewGroup(
 			huh.NewText().
 				Key("commands").
 				Title("Command(s) to run (bash)").
@@ -127,22 +253,33 @@ func newCreateForm() *huh.Form {
 }
 
 const (
-	deleteChoiceCron   = "cron"
-	deleteChoiceAll    = "all"
-	deleteChoiceCancel = "cancel"
+	deleteChoiceArchive = "archive"
+	deleteChoiceForever = "forever"
+	deleteChoiceCancel  = "cancel"
 )
 
-func newDeleteForm(j Job) *huh.Form {
+// newDeleteForm builds the "d" confirmation modal. archived jobs have
+// already been moved out of the way, so "Archive" (which would just try to
+// move a job into its own directory) is dropped from that case, leaving
+// only Delete forever / Cancel.
+func newDeleteForm(j Job, archived bool) *huh.Form {
+	options := []huh.Option[string]{
+		huh.NewOption("Archive", deleteChoiceArchive),
+		huh.NewOption("Delete forever", deleteChoiceForever),
+		huh.NewOption("Cancel", deleteChoiceCancel),
+	}
+	if archived {
+		options = []huh.Option[string]{
+			huh.NewOption("Delete forever", deleteChoiceForever),
+			huh.NewOption("Cancel", deleteChoiceCancel),
+		}
+	}
 	return huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Key("choice").
 				Title(fmt.Sprintf("Delete '%s'?", j.Name)).
-				Options(
-					huh.NewOption("Schedule only", deleteChoiceCron),
-					huh.NewOption("Schedule + files", deleteChoiceAll),
-					huh.NewOption("Cancel", deleteChoiceCancel),
-				),
+				Options(options...),
 		),
 	).
 		WithTheme(huh.ThemeCatppuccin()).

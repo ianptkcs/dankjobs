@@ -26,7 +26,10 @@ bump; starting at `1.0.0`, only a major bump introduces breaking changes.
 If your PR is a user-facing change (not docs/internal refactor), add a line
 under `[Unreleased]` in [CHANGELOG.md](CHANGELOG.md). Releases are tagged as
 `vX.Y.Z`, which triggers `.github/workflows/release.yml` to build binaries
-and publish a GitHub Release.
+and publish a GitHub Release. Tagging `vX.Y.Z-beta.N` (or `-rc.N`) instead
+publishes it as a GitHub **prerelease** — visible under Releases but not
+marked "Latest" — for changes you want out for testing before committing to
+a stable tag.
 
 ## License
 

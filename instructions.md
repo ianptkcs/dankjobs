@@ -23,6 +23,7 @@ Expected layout per job, at `<jobs-dir>/<job-name>/`:
 - `<job-name>.log` — optional. Writing here is what leaves a record in
   history: the presence of this file (with no timer left) is what marks a
   job as "done" instead of "removed".
+- `<job-name>.recur` — only for a custom-cycle recurring job (see below).
 
 While the job is still scheduled, the pair of units also exists at
 `~/.config/systemd/user/`:
@@ -49,11 +50,15 @@ While the job is still scheduled, the pair of units also exists at
 - **removed** — timer/service no longer exist, and there's no `.log`
   (schedule deleted, or it never existed, before ever running).
 
-**The practical consequence of this**: the job script itself is
+**The practical consequence of this**: a one-shot job's script itself is
 responsible for removing its own systemd units when it finishes
 successfully. If it doesn't do this self-cleanup, the job stays in
 "pending" forever even after it already ran — there's no other way for
-djobs to know it finished well.
+djobs to know it finished well. A recurring job (see below) is different:
+its timer is meant to keep existing, so its script does *not* self-remove —
+it lives in its own "recurring" panel instead of pending/history for as
+long as the timer exists, regardless of whether the last run succeeded,
+failed, or hasn't fired yet.
 
 ## Script template
 
@@ -121,8 +126,75 @@ This depends on `loginctl` lingering being enabled for the user
 (`loginctl show-user "$USER" --property=Linger` should return `yes`),
 otherwise the unit won't fire without an active login session.
 
+## Recurring jobs
+
+A job repeats instead of running once by giving it an `OnCalendar=` that
+isn't a single absolute timestamp. There are two ways to do that:
+
+**Native systemd expressions** (daily/weekly/monthly) — systemd itself
+resolves these into every future occurrence, so the script needs no tail at
+all beyond the actual work:
+
+```
+OnCalendar=*-*-* 09:00:00          # daily, at 09:00
+OnCalendar=Mon,Wed,Fri *-*-* 09:00:00   # weekly, on specific weekdays
+OnCalendar=*-*-15 09:00:00         # monthly, on the 15th
+```
+
+Validate any of these first with `systemd-analyze calendar "<expression>"`.
+
+**Custom day-interval cycle** — for a pattern like "run, wait 2 days, run,
+wait 4 days, run, wait 5 days, repeat" that native `OnCalendar=` can't
+express directly. This needs two things beyond the usual layout:
+
+- `<job-name>.recur` — two lines: the cycle as space-separated day counts
+  (`2 4 5`), then the current zero-based index into it (`0` initially).
+- `OnCalendar=` starts as a normal absolute timestamp (the first run), and
+  the script's tail *rewrites its own timer* to the next date in the cycle
+  instead of self-deleting:
+
+```bash
+# self-reschedule for the next point in the day-interval cycle (recurring, not one-shot)
+RECUR_FILE="$HOME/jobs/my-task/my-task.recur"
+read -r -a CYCLE < <(sed -n 1p "$RECUR_FILE")
+IDX=$(sed -n 2p "$RECUR_FILE")
+NEXT_IDX=$(( (IDX + 1) % ${#CYCLE[@]} ))
+NEXT_DATE=$(date -d "+${CYCLE[$IDX]} days" '+%Y-%m-%d %H:%M:00')
+sed -i "s/^OnCalendar=.*/OnCalendar=${NEXT_DATE}/" "$HOME/.config/systemd/user/my-task.timer"
+printf '%s\n%d\n' "${CYCLE[*]}" "$NEXT_IDX" > "$RECUR_FILE"
+systemctl --user daemon-reload
+systemctl --user enable --now my-task.timer
+```
+
+djobs tells a custom-cycle job apart from a genuine one-shot (whose
+`OnCalendar=` also looks like a plain absolute timestamp) purely by the
+presence of the `.recur` file — there's no other marker.
+
+## Archiving
+
+Instead of deleting a job, move its whole directory under a `.archive`
+subdirectory of the jobs dir:
+
+```
+~/jobs/.archive/my-task/
+  my-task.sh
+  my-task.log
+```
+
+djobs already skips dot-prefixed directories when scanning `~/jobs`, so an
+archived job is invisible to the normal pending/recurring/history panels
+for free. If the job still had a timer, disable and remove its unit files
+first (`systemctl --user disable --now my-task.timer`, then remove the
+`.timer`/`.service` files and `daemon-reload`) — an archived job shouldn't
+keep firing. To bring one back, just move the directory back out of
+`.archive`; its timer is not restored automatically.
+
 ## Or just use djobs
 
-If the TUI is available, press `n` — it asks for the name, date/time, and
-the command(s) to run, and writes the script (with the self-cleanup block
-above already baked in), both units, and enables the timer for you.
+If the TUI is available, press `n` — it asks for the name, a recurrence
+type (One-shot / Daily / Weekly / Monthly / Custom cycle) and its
+schedule, and the command(s) to run, then writes the script (with whichever
+tail that type needs already baked in), both units, and the `.recur`
+sidecar if applicable, and enables the timer for you. `d` on a job offers
+Archive or Delete forever; `A` toggles the history panel into an archived
+view, where `u` unarchives the selected job.

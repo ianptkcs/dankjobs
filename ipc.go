@@ -15,6 +15,7 @@ type jobJSON struct {
 	Name          string `json:"name"`
 	Status        string `json:"status"`
 	Pending       bool   `json:"pending"`
+	Recurring     bool   `json:"recurring"`
 	OnCalendar    string `json:"on_calendar,omitempty"`
 	ScheduleHuman string `json:"schedule_human,omitempty"`
 	HistoryWhen   string `json:"history_when,omitempty"`
@@ -25,11 +26,12 @@ type jobJSON struct {
 func (j Job) toIPC() jobJSON {
 	_, label := j.Status()
 	out := jobJSON{
-		Name:    j.Name,
-		Status:  label,
-		Pending: j.IsPending(),
-		Dir:     j.Dir,
-		Body:    j.Body,
+		Name:      j.Name,
+		Status:    label,
+		Pending:   j.IsPending(),
+		Recurring: j.IsRecurring(),
+		Dir:       j.Dir,
+		Body:      j.Body,
 	}
 	if j.TimerPath != "" {
 		out.OnCalendar = j.OnCalendar
@@ -99,7 +101,11 @@ func ipcJobsNext() int {
 	jobs := discoverJobs()
 	var candidates []Job
 	for _, j := range jobs {
-		if j.IsPending() && j.Enabled() && j.OnCalendar != "" {
+		// Recurring jobs are excluded: they're an ambient repeating
+		// schedule rather than a one-off "next thing to do", and their
+		// OnCalendar (e.g. "*-*-* 09:00:00") isn't a comparable timestamp
+		// string against a one-shot job's absolute date.
+		if j.IsPending() && !j.IsRecurring() && j.Enabled() && j.OnCalendar != "" {
 			candidates = append(candidates, j)
 		}
 	}

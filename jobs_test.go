@@ -178,7 +178,8 @@ func TestCreateJob(t *testing.T) {
 	})
 
 	now := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
-	if err := createJob(name, "echo hello", "some notes", 30, 9, 15, 6, now); err != nil {
+	sched := jobSchedule{Kind: recurOneshot, Minute: 30, Hour: 9, DOM: 15, Month: 6}
+	if err := createJob(name, "echo hello", "some notes", sched, now); err != nil {
 		t.Fatal(err)
 	}
 
@@ -208,8 +209,76 @@ func TestCreateJob(t *testing.T) {
 		t.Fatal("expected script to contain the self-cleanup block")
 	}
 
-	if err := createJob(name, "echo hello again", "", 30, 9, 15, 6, now); err == nil {
+	if err := createJob(name, "echo hello again", "", sched, now); err == nil {
 		t.Fatal("expected creating a duplicate-named job to fail")
+	}
+}
+
+func TestIsRecurring(t *testing.T) {
+	cases := []struct {
+		name string
+		job  Job
+		want bool
+	}{
+		{"no timer at all", Job{}, false},
+		{"oneshot absolute date", Job{TimerPath: "x", OnCalendar: "2026-08-05 14:00:00"}, false},
+		{"daily", Job{TimerPath: "x", OnCalendar: "*-*-* 09:00:00"}, true},
+		{"weekly", Job{TimerPath: "x", OnCalendar: "Mon,Wed,Fri *-*-* 09:00:00"}, true},
+		{"monthly", Job{TimerPath: "x", OnCalendar: "*-*-15 09:00:00"}, true},
+		{"custom cycle (looks like a oneshot date, but has a .recur sidecar)",
+			Job{TimerPath: "x", OnCalendar: "2026-08-05 14:00:00", RecurCyclePath: "/tmp/whatever.recur"}, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := c.job.IsRecurring(); got != c.want {
+				t.Fatalf("IsRecurring() = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+func TestComputeRecurringOnCalendar(t *testing.T) {
+	if got, want := computeRecurringOnCalendar(recurDaily, nil, 0, 9, 30), "*-*-* 09:30:00"; got != want {
+		t.Fatalf("daily = %q, want %q", got, want)
+	}
+	// Weekdays given out of order should still render Mon..Sun.
+	weekdays := []time.Weekday{time.Friday, time.Monday, time.Wednesday}
+	if got, want := computeRecurringOnCalendar(recurWeekly, weekdays, 0, 9, 0), "Mon,Wed,Fri *-*-* 09:00:00"; got != want {
+		t.Fatalf("weekly = %q, want %q", got, want)
+	}
+	if got, want := computeRecurringOnCalendar(recurMonthly, nil, 15, 9, 0), "*-*-15 09:00:00"; got != want {
+		t.Fatalf("monthly = %q, want %q", got, want)
+	}
+}
+
+func TestArchiveAndUnarchive(t *testing.T) {
+	hasRealSystemd(t)
+	job := setupFixture(t, "zz-jobs-tui-test-archive")
+
+	if err := archiveJob(job); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(job.Dir); !os.IsNotExist(err) {
+		t.Fatal("job dir should have moved out of jobsDir")
+	}
+	if _, err := os.Stat(job.TimerPath); !os.IsNotExist(err) {
+		t.Fatal("timer unit should have been removed")
+	}
+	if findJob(discoverJobs(), job.Name).Name != "" {
+		t.Fatal("archived job should not appear in discoverJobs")
+	}
+	if findJob(discoverArchivedJobs(), job.Name).Name == "" {
+		t.Fatal("archived job should appear in discoverArchivedJobs")
+	}
+
+	if err := unarchiveJob(job.Name); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(jobsDir, job.Name)); err != nil {
+		t.Fatal("job dir should be back under jobsDir after unarchive")
+	}
+	if findJob(discoverArchivedJobs(), job.Name).Name != "" {
+		t.Fatal("unarchived job should no longer appear in discoverArchivedJobs")
 	}
 }
 

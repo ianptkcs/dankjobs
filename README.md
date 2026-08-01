@@ -1,9 +1,10 @@
 # Dank Jobs
 
 A [Bubble Tea](https://github.com/charmbracelet/bubbletea) TUI for browsing and
-managing one-shot "jobs" scheduled as systemd user timers — a lightweight
-pattern for deferring CLI/git work (finish this branch tonight, open that PR
-tomorrow at 9am) without needing a full task queue.
+managing "jobs" scheduled as systemd user timers — a lightweight pattern for
+deferring CLI/git work (finish this branch tonight, open that PR tomorrow at
+9am) or scheduling something recurring (a daily digest, a weekly cleanup)
+without needing a full task queue.
 
 Styled with the official [Catppuccin](https://github.com/catppuccin/catppuccin)
 Mocha palette, following the project's
@@ -17,25 +18,36 @@ the reschedule/delete dialogs. Layout is patterned after
 
 ![screenshot](screenshot.png)
 
-The header bar reports the pending/history counts and the jobs directory
-currently in effect (`~/jobs` by default, or `DJOBS_JOBS_DIR` if set) — a
-quick sanity check for which directory djobs is actually reading from.
+The header bar reports the recurring/pending/history counts and the jobs
+directory currently in effect (`~/jobs` by default, or `DJOBS_JOBS_DIR` if
+set) — a quick sanity check for which directory djobs is actually reading
+from.
 
-Jobs are split across two side-by-side panels — **pending** (still on an
-active or paused timer, 3 parts of the row's width) and **history**
-(resolved, 2 parts) — plus a **details** panel below both, navigated
+Jobs are split across three side-by-side panels — **recurring** (has a
+timer and repeats, 2 parts of the row's width), **pending** (one-shot,
+still on an active or paused timer, 3 parts), and **history** (resolved,
+2 parts) — plus a **details** panel below all three, navigated
 neovim-split-style with `Ctrl+h/j/k/l`: the focused panel's border lights
-up. A job's history status distinguishes **done** (ran, self-removed
-its timer — the convention's job scripts only reach that step on success),
-**failed** (fired but the service unit shows `ActiveState=failed`), and
-**removed** (its schedule was deleted, or it was never scheduled, before
-ever running).
+up. A recurring job stays in its own panel — including while its last run
+shows **failed** — for as long as its timer exists, since the timer keeps
+firing regardless of one bad run. A one-shot job's history status
+distinguishes **done** (ran, self-removed its timer — the convention's
+job scripts only reach that step on success), **failed** (fired but the
+service unit shows `ActiveState=failed`), and **removed** (its schedule was
+deleted, or it was never scheduled, before ever running). Each side panel
+caps at 8 visible rows regardless of terminal height, scrolling past that.
+
+Pressing `A` swaps the history panel into an **archived** view instead of
+deleting a job for good — `d` offers Archive as well as Delete forever, and
+an archived job's directory just moves under `~/jobs/.archive/<name>/`
+(invisible to the normal panels) until `u` unarchives it back.
 
 **details** shows everything djobs knows about the selected job: its
-directory, the timer's schedule/status and next elapse time (pending jobs
-only), the `<name>*body*.txt` notes and the job script's contents (both read
-straight from disk), and the last 25 lines of `<name>.log` if it exists.
-`j`/`k`/arrows scroll it one line at a time when it's focused.
+directory, the timer's schedule/status and next elapse time (recurring and
+pending jobs only), the `<name>*body*.txt` notes and the job script's
+contents (both read straight from disk), and the last 25 lines of
+`<name>.log` if it exists. `j`/`k`/arrows scroll it one line at a time when
+it's focused.
 
 ## The job convention
 
@@ -68,6 +80,14 @@ without a schedule.
 `DJOBS_JOBS_DIR` / `DJOBS_SYSTEMD_DIR` override the two directories
 above, if you want to point djobs somewhere other than `~/jobs` and
 `~/.config/systemd/user`.
+
+A job repeats instead of running once by giving it a recurring
+`OnCalendar=` — Daily/Weekly/Monthly use systemd's own native recurring
+expressions (nothing further to manage), and a custom day-interval cycle
+(e.g. "run, wait 2 days, run, wait 4, run, wait 5, repeat") is tracked via
+a `<name>.recur` sidecar and a self-rescheduling tail in the script instead
+of the usual self-deleting one. See [instructions.md](instructions.md) for
+the exact formats.
 
 Panel/header titles and the focused-panel border use whatever accent color
 is currently configured in an installed
@@ -103,23 +123,25 @@ Drop the resulting binary on your `PATH`.
 
 | Key                 | Action                                          |
 | ------------------- | ------------------------------------------------ |
-| `n`                 | Create a new job                                |
+| `n`                 | Create a new job (pick one-shot or a recurrence) |
 | `e`                 | Reschedule the selected job                     |
 | `t`                 | Pause / resume its timer                        |
-| `d`                 | Delete (schedule only, or + files)              |
+| `d`                 | Archive, or delete forever                      |
+| `A`                 | Toggle the history panel into an archived view  |
+| `u`                 | Unarchive the selected job (while in that view) |
 | `r`                 | Refresh the list                                |
 | `q`                 | Quit                                             |
-| `ctrl+h`/`ctrl+l`   | Move focus between pending/history              |
+| `ctrl+h`/`ctrl+l`   | Move focus one panel left/right (recurring/pending/history) |
 | `ctrl+j`/`ctrl+k`   | Move focus down into details, and back up       |
 | `j`/`k`, `↓`/`↑`     | Move within the focused table, or scroll details  |
 | `g`/`G`             | Jump to first/last job                           |
 | `ctrl+u`/`ctrl+d`   | Half-page up/down                                |
 
 `u`/`d` alone would also be half-page up/down in a plain bubbles table, but
-`d` is remapped to delete here — use `ctrl+d` for half-page-down instead.
-All four of `ctrl+h/j/k/l` are no-ops when there's no pane in that
-direction, same as vim-tmux-navigator (e.g. `ctrl+l` from history, or
-`ctrl+k` from a side panel).
+they're remapped here (to unarchive and archive/delete) — use `ctrl+u`/
+`ctrl+d` for half-page up/down instead. All four of `ctrl+h/j/k/l` are
+no-ops when there's no pane in that direction, same as vim-tmux-navigator
+(e.g. `ctrl+l` from history, or `ctrl+k` from a side panel).
 
 ## IPC
 
@@ -129,13 +151,18 @@ own `dcal ipc <method> --json`:
 
 ```bash
 djobs ipc jobs.list --json                  # every discovered job
-djobs ipc jobs.list pending=true --json     # only pending
+djobs ipc jobs.list pending=true --json     # pending + recurring (still scheduled)
 djobs ipc jobs.list pending=false --json    # only history
-djobs ipc jobs.next --json                  # soonest active pending job, or null
+djobs ipc jobs.next --json                  # soonest active *one-shot* pending job, or null
 ```
 
-Output reuses the same status/schedule logic as the TUI (`jobs.go`'s `Job`
-methods), so it never drifts from what's shown on screen.
+Each job's JSON also carries a `recurring` field, so a consumer can tell a
+still-scheduled recurring job apart from a one-shot one under
+`pending=true`. `jobs.next` deliberately excludes recurring jobs — it
+answers "what one-off thing is coming up next", not "what's part of an
+ambient repeating schedule". Output otherwise reuses the same
+status/schedule logic as the TUI (`jobs.go`'s `Job` methods), so it never
+drifts from what's shown on screen.
 
 ## Development
 

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,19 +22,30 @@ const (
 	modeCreate
 )
 
-// panelFocus selects which of the three panels (pending, history, or
-// details) currently receives key input — neovim-style pane navigation:
-// Ctrl+h/l move between the side-by-side pending/history panels,
-// Ctrl+j/k move down into details and back up. focusDetail is a dead end
-// for currentJob(): selectedSide (below) keeps tracking whichever of
-// pending/history was last active, so the detail view keeps showing
-// that job while focus is parked on details.
+// panelFocus selects which of the four panels (recurring, pending, history,
+// or details) currently receives key input — neovim-style pane navigation:
+// Ctrl+h/l move focus one panel left/right among the three side-by-side
+// panels (no-op at either edge, same as vim-tmux-navigator), Ctrl+j/k move
+// down into details and back up. focusDetail is a dead end for
+// currentJob(): selectedSide (below) keeps tracking whichever side panel
+// was last active, so the detail view keeps showing that job while focus is
+// parked on details.
 type panelFocus int
 
 const (
-	focusPending panelFocus = iota
+	focusRecurring panelFocus = iota
+	focusPending
 	focusHistory
 	focusDetail
+)
+
+// historyMode toggles what the history panel displays: resolved jobs
+// (normal) or archived ones ('A' toggles between the two).
+type historyMode int
+
+const (
+	historyModeNormal historyMode = iota
+	historyModeArchived
 )
 
 // Column widths (content width, before bubbles/table's default Padding(0,1)
@@ -58,25 +70,37 @@ const (
 	detailBoxOverhead = 2 + 1 + 1
 	minVisibleRows    = 2
 	minDetailLines    = 3
-	// Share of body height given to the pending/history row (both
-	// panels sit side by side in that row, same height).
+	// Share of body height given to the recurring/pending/history row (all
+	// three panels sit side by side in that row, same height).
 	jobsRowPercent = 45
-	// pending:history WIDTH ratio, side by side in that row.
-	pendingWidthShare  = 3
-	historyWidthShare  = 2
-	panelGap           = 1
-	minPanelInnerWidth = 20
+	// Hard ceiling on visible rows per side panel, regardless of terminal
+	// height — keeps the dashboard compact instead of growing to fill a
+	// tall terminal. Whichever of this and the dynamic jobsRowPercent split
+	// is smaller wins (see layout()).
+	maxVisibleRows = 8
+	// recurring:pending:history WIDTH ratio, side by side in that row.
+	recurringWidthShare = 2
+	pendingWidthShare   = 3
+	historyWidthShare   = 2
+	panelGap            = 1
+	minPanelInnerWidth  = 20
 )
 
 type appModel struct {
-	pendingJobs []Job
-	historyJobs []Job
+	recurringJobs []Job
+	pendingJobs   []Job
+	historyJobs   []Job
+	archivedJobs  []Job
+	// historyMode selects whether the history panel currently shows
+	// historyJobs or archivedJobs — toggled by 'A'.
+	historyMode historyMode
 
-	pendingTable table.Model
-	historyTable table.Model
-	focus        panelFocus
-	// selectedSide is which of pending/history currentJob() reads
-	// from — always focusPending or focusHistory, never focusDetail. It
+	recurringTable table.Model
+	pendingTable   table.Model
+	historyTable   table.Model
+	focus          panelFocus
+	// selectedSide is which side panel currentJob() reads from — always
+	// focusRecurring, focusPending, or focusHistory, never focusDetail. It
 	// only changes on Ctrl+h/l, so it survives a Ctrl+j trip into details.
 	selectedSide panelFocus
 	// detailScroll is the first visible line of the current job's detail
@@ -87,25 +111,30 @@ type appModel struct {
 	width      int
 	height     int
 	innerWidth int // content width for header/detail/footer (full width)
-	// Content width of each side-by-side panel — pending gets a 3:2 share
-	// of the row over history.
-	pendingInnerWidth int
-	historyInnerWidth int
-	detailMaxLines    int
-	message           string
+	// Content width of each side-by-side panel — 2:3:2 share of the row
+	// across recurring:pending:history.
+	recurringInnerWidth int
+	pendingInnerWidth   int
+	historyInnerWidth   int
+	detailMaxLines      int
+	message             string
 
 	// Rune offset/width of the status column within a rendered table line,
 	// used by colorizeStatusColumn — set by layout() alongside the column
 	// widths they're derived from.
-	pendingStatusOffset int
-	historyStatusOffset int
-	statusCellWidth     int
+	recurringStatusOffset int
+	pendingStatusOffset   int
+	historyStatusOffset   int
+	statusCellWidth       int
 
 	editJob  *Job
 	editForm *huh.Form
 
 	deleteJob  *Job
 	deleteForm *huh.Form
+	// deleteFromArchive records which variant of newDeleteForm is showing,
+	// so updateDelete knows an "Archive" choice isn't even on offer.
+	deleteFromArchive bool
 
 	createForm *huh.Form
 }
@@ -133,10 +162,11 @@ func newJobTable() table.Model {
 
 func newModel() appModel {
 	m := appModel{
-		pendingTable: newJobTable(),
-		historyTable: newJobTable(),
-		width:        100,
-		height:       30,
+		recurringTable: newJobTable(),
+		pendingTable:   newJobTable(),
+		historyTable:   newJobTable(),
+		width:          100,
+		height:         30,
 	}
 	m.reloadJobs()
 	return m
@@ -146,21 +176,38 @@ func (m appModel) Init() tea.Cmd {
 	return nil
 }
 
+// activeHistoryJobs is whichever list currently backs the history panel —
+// resolved jobs normally, or archived ones while historyMode is toggled.
+func (m *appModel) activeHistoryJobs() []Job {
+	if m.historyMode == historyModeArchived {
+		return m.archivedJobs
+	}
+	return m.historyJobs
+}
+
 // focusedTable/focusedJobs dispatch on selectedSide (not focus — focus can
 // also be focusDetail, which has no table of its own) so most code can work
 // generically instead of switching on the side everywhere.
 func (m *appModel) focusedTable() *table.Model {
-	if m.selectedSide == focusPending {
+	switch m.selectedSide {
+	case focusRecurring:
+		return &m.recurringTable
+	case focusHistory:
+		return &m.historyTable
+	default:
 		return &m.pendingTable
 	}
-	return &m.historyTable
 }
 
 func (m *appModel) focusedJobs() []Job {
-	if m.selectedSide == focusPending {
+	switch m.selectedSide {
+	case focusRecurring:
+		return m.recurringJobs
+	case focusHistory:
+		return m.activeHistoryJobs()
+	default:
 		return m.pendingJobs
 	}
-	return m.historyJobs
 }
 
 func (m *appModel) currentJob() *Job {
@@ -175,22 +222,32 @@ func (m *appModel) currentJob() *Job {
 	return &jobs[idx]
 }
 
-// reloadJobs re-scans ~/jobs, splits jobs into "pending" (still on an
-// active or paused timer) and "history" (resolved — completed, failed, or
-// removed before ever running), and rebuilds both tables, keeping each
-// one's cursor on its previously selected job by name instead of resetting
-// to row 0.
+// reloadJobs re-scans ~/jobs, splits jobs into "recurring" (has a timer and
+// repeats), "pending" (one-shot, still on an active or paused timer), and
+// "history" (resolved — completed, failed, or removed before ever running),
+// plus a separate archived list from ~/jobs/.archive, and rebuilds all
+// three tables, keeping each one's cursor on its previously selected job by
+// name instead of resetting to row 0.
 func (m *appModel) reloadJobs() {
 	m.detailScroll = 0
-	prevPending, prevHistory := jobName(m.pendingJobs, m.pendingTable.Cursor()), jobName(m.historyJobs, m.historyTable.Cursor())
+	prevRecurring := jobName(m.recurringJobs, m.recurringTable.Cursor())
+	prevPending := jobName(m.pendingJobs, m.pendingTable.Cursor())
+	prevHistory := jobName(m.activeHistoryJobs(), m.historyTable.Cursor())
 
 	all := discoverJobs()
+	m.recurringJobs = nil
 	m.pendingJobs = nil
 	m.historyJobs = nil
 	for _, j := range all {
-		if j.IsPending() {
+		switch {
+		// A recurring job's timer keeps firing regardless of the last run's
+		// outcome, so it stays in its own panel — including while
+		// "failed" — for as long as the timer unit itself exists.
+		case j.IsRecurring():
+			m.recurringJobs = append(m.recurringJobs, j)
+		case j.IsPending():
 			m.pendingJobs = append(m.pendingJobs, j)
-		} else {
+		default:
 			m.historyJobs = append(m.historyJobs, j)
 		}
 	}
@@ -199,9 +256,23 @@ func (m *appModel) reloadJobs() {
 		return m.historyJobs[i].historyModTime().After(m.historyJobs[k].historyModTime())
 	})
 
+	m.archivedJobs = discoverArchivedJobs()
+	sort.SliceStable(m.archivedJobs, func(i, k int) bool {
+		return m.archivedJobs[i].historyModTime().After(m.archivedJobs[k].historyModTime())
+	})
+
 	// Columns must exist before SetRows below — bubbles/table indexes
 	// m.cols per cell while rendering, and panics if that's still empty.
 	m.layout()
+
+	recurringSelected := indexOfName(m.recurringJobs, prevRecurring)
+	recurringRows := make([]table.Row, len(m.recurringJobs))
+	for i, j := range m.recurringJobs {
+		_, label := j.Status()
+		recurringRows[i] = table.Row{j.Name, j.NextRunHuman(), label}
+	}
+	m.recurringTable.SetRows(recurringRows)
+	m.recurringTable.SetCursor(recurringSelected)
 
 	pendingSelected := indexOfName(m.pendingJobs, prevPending)
 	pendingRows := make([]table.Row, len(m.pendingJobs))
@@ -212,10 +283,14 @@ func (m *appModel) reloadJobs() {
 	m.pendingTable.SetRows(pendingRows)
 	m.pendingTable.SetCursor(pendingSelected)
 
-	historySelected := indexOfName(m.historyJobs, prevHistory)
-	historyRows := make([]table.Row, len(m.historyJobs))
-	for i, j := range m.historyJobs {
-		_, label := j.Status()
+	historyJobs := m.activeHistoryJobs()
+	historySelected := indexOfName(historyJobs, prevHistory)
+	historyRows := make([]table.Row, len(historyJobs))
+	for i, j := range historyJobs {
+		label := "archived"
+		if m.historyMode == historyModeNormal {
+			_, label = j.Status()
+		}
 		historyRows[i] = table.Row{j.Name, j.HistoryWhen(), label}
 	}
 	m.historyTable.SetRows(historyRows)
@@ -241,25 +316,31 @@ func indexOfName(jobs []Job, name string) int {
 	return 0
 }
 
-// layout recomputes column widths for both tables (so each one's rendered
-// width exactly matches its panel's inner width — a mismatch there makes
-// lipgloss hard-wrap rows mid-line) and the vertical space budget across the
-// jobs row + details panel, so header + jobs row + details + footer never
-// exceeds m.height. Pending and history sit side by side in the same
-// row, splitting its width 2:1.
+// layout recomputes column widths for all three tables (so each one's
+// rendered width exactly matches its panel's inner width — a mismatch there
+// makes lipgloss hard-wrap rows mid-line) and the vertical space budget
+// across the jobs row + details panel, so header + jobs row + details +
+// footer never exceeds m.height. Recurring, pending, and history sit side
+// by side in the same row, splitting its width 2:3:2.
 func (m *appModel) layout() {
 	m.innerWidth = m.width - 4
 	if m.innerWidth < 40 {
 		m.innerWidth = 40
 	}
 
-	totalRowWidth := m.width - panelGap
-	if minRowWidth := 2 * (minPanelInnerWidth + 4); totalRowWidth < minRowWidth {
+	totalShare := recurringWidthShare + pendingWidthShare + historyWidthShare
+	totalRowWidth := m.width - 2*panelGap
+	if minRowWidth := 3 * (minPanelInnerWidth + 4); totalRowWidth < minRowWidth {
 		totalRowWidth = minRowWidth
 	}
-	pendingBoxWidth := totalRowWidth * pendingWidthShare / (pendingWidthShare + historyWidthShare)
-	historyBoxWidth := totalRowWidth - pendingBoxWidth
+	recurringBoxWidth := totalRowWidth * recurringWidthShare / totalShare
+	pendingBoxWidth := totalRowWidth * pendingWidthShare / totalShare
+	historyBoxWidth := totalRowWidth - recurringBoxWidth - pendingBoxWidth
 
+	m.recurringInnerWidth = recurringBoxWidth - 4
+	if m.recurringInnerWidth < minPanelInnerWidth {
+		m.recurringInnerWidth = minPanelInnerWidth
+	}
 	m.pendingInnerWidth = pendingBoxWidth - 4
 	if m.pendingInnerWidth < minPanelInnerWidth {
 		m.pendingInnerWidth = minPanelInnerWidth
@@ -268,6 +349,18 @@ func (m *appModel) layout() {
 	if m.historyInnerWidth < minPanelInnerWidth {
 		m.historyInnerWidth = minPanelInnerWidth
 	}
+
+	recurringNameWidth := m.recurringInnerWidth - 3*2 - whenColWidth - statusColWidth
+	if recurringNameWidth < minNameColWidth {
+		recurringNameWidth = minNameColWidth
+	}
+	m.recurringTable.SetColumns([]table.Column{
+		{Title: "job", Width: recurringNameWidth},
+		{Title: "next run", Width: whenColWidth},
+		{Title: "status", Width: statusColWidth},
+	})
+	m.recurringTable.SetWidth(m.recurringInnerWidth)
+	m.recurringStatusOffset = (recurringNameWidth + 2) + (whenColWidth + 2)
 
 	pendingNameWidth := m.pendingInnerWidth - 3*2 - scheduleColWidth - statusColWidth
 	if pendingNameWidth < minNameColWidth {
@@ -305,9 +398,13 @@ func (m *appModel) layout() {
 	if jobsRowHeight < minJobsRow {
 		jobsRowHeight = minJobsRow
 	}
-	// Never hand the row more height than the longer of the two lists
-	// actually needs — leftover falls through to the detail panel instead.
-	idealRows := max(len(m.pendingJobs), len(m.historyJobs))
+	// Never hand the row more height than the longest list actually needs
+	// (capped at maxVisibleRows regardless) — leftover falls through to the
+	// detail panel instead.
+	idealRows := max(len(m.recurringJobs), len(m.pendingJobs), len(m.activeHistoryJobs()))
+	if idealRows > maxVisibleRows {
+		idealRows = maxVisibleRows
+	}
 	if idealJobsRow := max(tableBoxOverhead+idealRows, minJobsRow); jobsRowHeight > idealJobsRow {
 		jobsRowHeight = idealJobsRow
 	}
@@ -317,6 +414,7 @@ func (m *appModel) layout() {
 		detailBoxHeight = detailBoxOverhead + minDetailLines
 	}
 
+	setTableVisibleRows(&m.recurringTable, jobsRowHeight-tableBoxOverhead)
 	setTableVisibleRows(&m.pendingTable, jobsRowHeight-tableBoxOverhead)
 	setTableVisibleRows(&m.historyTable, jobsRowHeight-tableBoxOverhead)
 
@@ -372,17 +470,26 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.createForm = newCreateForm()
 		m.mode = modeCreate
 		return m, m.createForm.Init()
-	// Neovim-style pane navigation: Ctrl+h/l move between the side-by-side
-	// pending/history panels; Ctrl+j/k move down into details and back
-	// up. No-op when there's no pane in that direction, same as
+	// Neovim-style pane navigation: Ctrl+h/l move focus one panel left/right
+	// among the three side-by-side panels, pivoting off selectedSide so it
+	// still works from focusDetail; Ctrl+j/k move down into details and
+	// back up. No-op when there's no pane in that direction, same as
 	// vim-tmux-navigator.
 	case "ctrl+h":
-		m.focus = focusPending
-		m.selectedSide = focusPending
+		switch m.selectedSide {
+		case focusPending:
+			m.focus, m.selectedSide = focusRecurring, focusRecurring
+		case focusHistory:
+			m.focus, m.selectedSide = focusPending, focusPending
+		}
 		return m, nil
 	case "ctrl+l":
-		m.focus = focusHistory
-		m.selectedSide = focusHistory
+		switch m.selectedSide {
+		case focusRecurring:
+			m.focus, m.selectedSide = focusPending, focusPending
+		case focusPending:
+			m.focus, m.selectedSide = focusHistory, focusHistory
+		}
 		return m, nil
 	case "ctrl+j":
 		if m.focus != focusDetail {
@@ -432,10 +539,38 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		jobCopy := *job
+		archived := m.selectedSide == focusHistory && m.historyMode == historyModeArchived
 		m.deleteJob = &jobCopy
-		m.deleteForm = newDeleteForm(jobCopy)
+		m.deleteFromArchive = archived
+		m.deleteForm = newDeleteForm(jobCopy, archived)
 		m.mode = modeDelete
 		return m, m.deleteForm.Init()
+	case "A":
+		if m.historyMode == historyModeNormal {
+			m.historyMode = historyModeArchived
+			m.message = "Showing archived jobs."
+		} else {
+			m.historyMode = historyModeNormal
+			m.message = "Showing history."
+		}
+		m.focus, m.selectedSide = focusHistory, focusHistory
+		m.reloadJobs()
+		return m, nil
+	case "u":
+		if m.historyMode != historyModeArchived {
+			return m, nil
+		}
+		job := m.currentJob()
+		if job == nil {
+			return m, nil
+		}
+		if err := unarchiveJob(job.Name); err != nil {
+			m.message = fmt.Sprintf("error unarchiving '%s': %v", job.Name, err)
+			return m, nil
+		}
+		m.message = fmt.Sprintf("'%s' unarchived.", job.Name)
+		m.reloadJobs()
+		return m, nil
 	}
 
 	// Details has no table of its own — j/k (and the arrow keys) scroll its
@@ -465,10 +600,13 @@ func (m appModel) forwardToFocusedTable(msg tea.Msg) (tea.Model, tea.Cmd) {
 	prevName := jobName(m.focusedJobs(), m.focusedTable().Cursor())
 
 	var cmd tea.Cmd
-	if m.selectedSide == focusPending {
-		m.pendingTable, cmd = m.pendingTable.Update(msg)
-	} else {
+	switch m.selectedSide {
+	case focusRecurring:
+		m.recurringTable, cmd = m.recurringTable.Update(msg)
+	case focusHistory:
 		m.historyTable, cmd = m.historyTable.Update(msg)
+	default:
+		m.pendingTable, cmd = m.pendingTable.Update(msg)
 	}
 
 	if jobName(m.focusedJobs(), m.focusedTable().Cursor()) != prevName {
@@ -522,18 +660,46 @@ func (m appModel) updateCreate(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if m.createForm.State == huh.StateCompleted {
 		name := m.createForm.GetString("name")
-		dom, month, errD := parseDDMM(m.createForm.GetString("date"))
-		hour, minute, errT := parseHHMM(m.createForm.GetString("time"))
 		commands := m.createForm.GetString("commands")
 		notes := m.createForm.GetString("notes")
+		kind, _ := m.createForm.Get("type").(RecurrenceKind)
+		hour, minute, errTime := parseHHMM(m.createForm.GetString("time"))
+
+		sched := jobSchedule{Kind: kind, Hour: hour, Minute: minute}
+		valid := errTime == nil
+		switch kind {
+		case recurDaily:
+			// Hour/minute above is everything a daily schedule needs.
+		case recurWeekly:
+			weekdays, _ := m.createForm.Get("weekdays").([]time.Weekday)
+			sched.Weekdays = weekdays
+			valid = valid && len(weekdays) > 0
+		case recurMonthly:
+			dayOfMonth, errDOM := strconv.Atoi(strings.TrimSpace(m.createForm.GetString("dayOfMonth")))
+			sched.DayOfMonth = dayOfMonth
+			valid = valid && errDOM == nil
+		default: // recurOneshot, recurCycle — both need an absolute start date
+			dom, month, errDate := parseDDMM(m.createForm.GetString("date"))
+			sched.DOM, sched.Month = dom, month
+			valid = valid && errDate == nil
+			if kind == recurCycle {
+				cycle, errCycle := parseCycle(m.createForm.GetString("cycle"))
+				sched.Cycle = cycle
+				valid = valid && errCycle == nil
+			}
+		}
+
 		m.mode = modeList
 		m.createForm = nil
 
-		if errD == nil && errT == nil {
-			if err := createJob(name, commands, notes, minute, hour, dom, month, time.Now()); err == nil {
+		if valid {
+			if err := createJob(name, commands, notes, sched, time.Now()); err == nil {
 				m.message = fmt.Sprintf("'%s' created and scheduled.", name)
-				m.focus = focusPending
-				m.selectedSide = focusPending
+				if kind == recurOneshot {
+					m.focus, m.selectedSide = focusPending, focusPending
+				} else {
+					m.focus, m.selectedSide = focusRecurring, focusRecurring
+				}
 			} else {
 				m.message = fmt.Sprintf("error creating '%s': %v", name, err)
 			}
@@ -550,6 +716,7 @@ func (m appModel) updateDelete(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mode = modeList
 		m.deleteForm = nil
 		m.deleteJob = nil
+		m.deleteFromArchive = false
 		return m, nil
 	}
 
@@ -564,15 +731,21 @@ func (m appModel) updateDelete(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mode = modeList
 		m.deleteForm = nil
 		m.deleteJob = nil
+		m.deleteFromArchive = false
 
 		switch choice {
-		case deleteChoiceCron, deleteChoiceAll:
-			if err := deleteJob(job, choice == deleteChoiceAll); err == nil {
-				scope := "schedule only"
-				if choice == deleteChoiceAll {
-					scope = "schedule + files"
-				}
-				m.message = fmt.Sprintf("'%s' removed (%s).", job.Name, scope)
+		case deleteChoiceArchive:
+			if err := archiveJob(job); err == nil {
+				m.message = fmt.Sprintf("'%s' archived.", job.Name)
+			} else {
+				m.message = fmt.Sprintf("error archiving '%s': %v", job.Name, err)
+			}
+			m.reloadJobs()
+		case deleteChoiceForever:
+			if err := deleteJob(job, true); err == nil {
+				m.message = fmt.Sprintf("'%s' deleted forever.", job.Name)
+			} else {
+				m.message = fmt.Sprintf("error deleting '%s': %v", job.Name, err)
 			}
 			m.reloadJobs()
 		}
@@ -595,24 +768,37 @@ func (m appModel) View() string {
 		return m.renderModal("new job", m.createForm.View())
 	}
 
-	headerText := fmt.Sprintf("jobs — %d pending, %d in history — %s", len(m.pendingJobs), len(m.historyJobs), jobsDir)
+	headerText := fmt.Sprintf("jobs — %d recurring, %d pending, %d in history — %s", len(m.recurringJobs), len(m.pendingJobs), len(m.historyJobs), jobsDir)
 	if avail := m.width - 4; avail > 0 {
 		headerText = strings.TrimRight(padLines(headerText, avail), " ")
 	}
 	header := headerStyle(m.width).Render(headerText)
+
+	recurringView := colorizeStatusColumn(m.recurringTable.View(), m.recurringJobs, m.recurringTable.Cursor(), m.recurringStatusOffset, m.statusCellWidth)
+	recurringBox := panelStyle(m.focus == focusRecurring).Render(padLines(
+		titleStyle().Render("recurring")+"\n\n"+recurringView, m.recurringInnerWidth,
+	))
 
 	pendingView := colorizeStatusColumn(m.pendingTable.View(), m.pendingJobs, m.pendingTable.Cursor(), m.pendingStatusOffset, m.statusCellWidth)
 	pendingBox := panelStyle(m.focus == focusPending).Render(padLines(
 		titleStyle().Render("pending")+"\n\n"+pendingView, m.pendingInnerWidth,
 	))
 
-	historyView := colorizeStatusColumn(m.historyTable.View(), m.historyJobs, m.historyTable.Cursor(), m.historyStatusOffset, m.statusCellWidth)
+	// Archived jobs have no meaningful Status() (their timer is long gone),
+	// so the archived view skips colorizeStatusColumn — the plain "archived"
+	// label rendered by the table itself is all there is to show.
+	historyTitle, historyView := "history", m.historyTable.View()
+	if m.historyMode == historyModeArchived {
+		historyTitle = "archived"
+	} else {
+		historyView = colorizeStatusColumn(historyView, m.historyJobs, m.historyTable.Cursor(), m.historyStatusOffset, m.statusCellWidth)
+	}
 	historyBox := panelStyle(m.focus == focusHistory).Render(padLines(
-		titleStyle().Render("history")+"\n\n"+historyView, m.historyInnerWidth,
+		titleStyle().Render(historyTitle)+"\n\n"+historyView, m.historyInnerWidth,
 	))
 
-	// Pending and history sit side by side, 3:2 width split.
-	jobsRow := lipgloss.JoinHorizontal(lipgloss.Top, pendingBox, strings.Repeat(" ", panelGap), historyBox)
+	// Recurring, pending, and history sit side by side, 2:3:2 width split.
+	jobsRow := lipgloss.JoinHorizontal(lipgloss.Top, recurringBox, strings.Repeat(" ", panelGap), pendingBox, strings.Repeat(" ", panelGap), historyBox)
 
 	detailTitle := "details"
 	if total := len(m.currentDetailLines()); total > m.detailMaxLines {
@@ -622,7 +808,7 @@ func (m appModel) View() string {
 		titleStyle().Render(detailTitle)+"\n\n"+m.renderDetailBody(), m.innerWidth,
 	))
 
-	help := "n new · e reschedule · t pause/resume · d delete · r refresh · ctrl+h/j/k/l navigate · j/k scroll details · q quit"
+	help := "n new · e reschedule · t pause/resume · d delete/archive · A archived view · u unarchive · r refresh · ctrl+h/j/k/l navigate · j/k scroll details · q quit"
 	footerText := help
 	if m.message != "" {
 		footerText = m.message + "   " + help
@@ -671,7 +857,7 @@ func (m appModel) maxDetailScroll() int {
 func (m appModel) renderDetailBody() string {
 	lines := m.currentDetailLines()
 	if lines == nil {
-		lines = []string{dimStyle().Render(fmt.Sprintf("No jobs in %s (pending or history).", jobsDir))}
+		lines = []string{dimStyle().Render(fmt.Sprintf("No jobs in %s (recurring, pending, or history).", jobsDir))}
 	}
 	scroll := m.detailScroll
 	if max := m.maxDetailScroll(); scroll > max {
