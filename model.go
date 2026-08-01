@@ -79,9 +79,9 @@ const (
 	// is smaller wins (see layout()).
 	maxVisibleRows = 8
 	// recurring:pending:history WIDTH ratio, side by side in that row.
-	recurringWidthShare = 2
-	pendingWidthShare   = 3
-	historyWidthShare   = 2
+	recurringWidthShare = 1
+	pendingWidthShare   = 1
+	historyWidthShare   = 1
 	panelGap            = 1
 	minPanelInnerWidth  = 20
 )
@@ -111,8 +111,8 @@ type appModel struct {
 	width      int
 	height     int
 	innerWidth int // content width for header/detail/footer (full width)
-	// Content width of each side-by-side panel — 2:3:2 share of the row
-	// across recurring:pending:history.
+	// Content width of each side-by-side panel — equal 1:1:1 share of the
+	// row across recurring:pending:history.
 	recurringInnerWidth int
 	pendingInnerWidth   int
 	historyInnerWidth   int
@@ -321,7 +321,7 @@ func indexOfName(jobs []Job, name string) int {
 // makes lipgloss hard-wrap rows mid-line) and the vertical space budget
 // across the jobs row + details panel, so header + jobs row + details +
 // footer never exceeds m.height. Recurring, pending, and history sit side
-// by side in the same row, splitting its width 2:3:2.
+// by side in the same row, splitting its width equally.
 func (m *appModel) layout() {
 	m.innerWidth = m.width - 4
 	if m.innerWidth < 40 {
@@ -797,7 +797,7 @@ func (m appModel) View() string {
 		titleStyle().Render(historyTitle)+"\n\n"+historyView, m.historyInnerWidth,
 	))
 
-	// Recurring, pending, and history sit side by side, 2:3:2 width split.
+	// Recurring, pending, and history sit side by side, equal width split.
 	jobsRow := lipgloss.JoinHorizontal(lipgloss.Top, recurringBox, strings.Repeat(" ", panelGap), pendingBox, strings.Repeat(" ", panelGap), historyBox)
 
 	detailTitle := "details"

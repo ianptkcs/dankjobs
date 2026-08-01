@@ -23,10 +23,10 @@ directory currently in effect (`~/jobs` by default, or `DJOBS_JOBS_DIR` if
 set) — a quick sanity check for which directory djobs is actually reading
 from.
 
-Jobs are split across three side-by-side panels — **recurring** (has a
-timer and repeats, 2 parts of the row's width), **pending** (one-shot,
-still on an active or paused timer, 3 parts), and **history** (resolved,
-2 parts) — plus a **details** panel below all three, navigated
+Jobs are split across three equal-width side-by-side panels —
+**recurring** (has a timer and repeats), **pending** (one-shot, still on
+an active or paused timer), and **history** (resolved) — plus a
+**details** panel below all three, navigated
 neovim-split-style with `Ctrl+h/j/k/l`: the focused panel's border lights
 up. A recurring job stays in its own panel — including while its last run
 shows **failed** — for as long as its timer exists, since the timer keeps
