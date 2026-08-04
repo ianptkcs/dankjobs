@@ -1,5 +1,10 @@
 # Dank Jobs
 
+[![Go Version](https://img.shields.io/github/go-mod/go-version/ianptkcs/djobs?style=flat-square&logo=go&logoColor=white&color=00ADD8)](go.mod)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)](LICENSE)
+[![Built with Bubble Tea](https://img.shields.io/badge/built%20with-Bubble%20Tea-ff69b4?style=flat-square)](https://github.com/charmbracelet/bubbletea)
+[![Powered by tabelatuiui](https://img.shields.io/badge/theme-tabelatuiui-d6b4f7?style=flat-square)](https://github.com/TabelaDev/tabelatuiui)
+
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/ianptkcs)
 
 A [Bubble Tea](https://github.com/charmbracelet/bubbletea) TUI for browsing and
