@@ -20,7 +20,7 @@ the reschedule/delete dialogs. Layout is patterned after
 
 The theme and shared chrome (header/footer/panels, ANSI-aware padding, the
 `ipc ... --json` helpers) come from
-[`tabelatuiui`](https://github.com/ianptkcs/tabelatuiui), the shared UI
+[`tabelatuiui`](https://github.com/TabelaDev/tabelatuiui), the shared UI
 library for my Bubble Tea TUIs.
 
 ![screenshot](screenshot.png)
