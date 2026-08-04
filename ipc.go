@@ -1,11 +1,11 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
-	"strings"
+
+	"github.com/ianptkcs/tabelatuiui"
 )
 
 // jobJSON is the wire format for the ipc subcommand, reusing Job's own
@@ -46,38 +46,20 @@ func (j Job) toIPC() jobJSON {
 // scriptable data source mirroring dcal's `dcal ipc <method> --json`
 // convention. Returns the process exit code.
 func runIPC(args []string) int {
-	if len(args) == 0 {
+	parsed, err := tuiui.ParseIPCArgs(args)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "uso: djobs ipc <método> [key=value...] --json")
+		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 
-	method := args[0]
-	filters := map[string]string{}
-	jsonOut := false
-	for _, arg := range args[1:] {
-		if arg == "--json" {
-			jsonOut = true
-			continue
-		}
-		if k, v, ok := strings.Cut(arg, "="); ok {
-			filters[k] = v
-			continue
-		}
-		fmt.Fprintf(os.Stderr, "argumento inválido: %q (esperado key=value ou --json)\n", arg)
-		return 1
-	}
-	if !jsonOut {
-		fmt.Fprintln(os.Stderr, "apenas saída --json é suportada por enquanto")
-		return 1
-	}
-
-	switch method {
+	switch parsed.Method {
 	case "jobs.list":
-		return ipcJobsList(filters)
+		return ipcJobsList(parsed.Filters)
 	case "jobs.next":
 		return ipcJobsNext()
 	default:
-		fmt.Fprintf(os.Stderr, "método desconhecido: %q\n", method)
+		fmt.Fprintf(os.Stderr, "método desconhecido: %q\n", parsed.Method)
 		return 1
 	}
 }
@@ -94,7 +76,7 @@ func ipcJobsList(filters map[string]string) int {
 		}
 		out = append(out, j.toIPC())
 	}
-	return writeJSON(out)
+	return tuiui.WriteJSON(out)
 }
 
 func ipcJobsNext() int {
@@ -110,21 +92,11 @@ func ipcJobsNext() int {
 		}
 	}
 	if len(candidates) == 0 {
-		return writeJSON(nil)
+		return tuiui.WriteJSON(nil)
 	}
 	sort.Slice(candidates, func(i, k int) bool {
 		return candidates[i].OnCalendar < candidates[k].OnCalendar
 	})
 	out := candidates[0].toIPC()
-	return writeJSON(out)
-}
-
-func writeJSON(v any) int {
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(v); err != nil {
-		fmt.Fprintln(os.Stderr, "erro ao serializar json:", err)
-		return 1
-	}
-	return 0
+	return tuiui.WriteJSON(out)
 }

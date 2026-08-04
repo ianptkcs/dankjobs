@@ -10,20 +10,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ianptkcs/tabelatuiui"
 )
 
 var (
-	homeDir, _     = os.UserHomeDir()
-	jobsDir        = envOr("DJOBS_JOBS_DIR", filepath.Join(homeDir, "jobs"))
-	systemdUserDir = envOr("DJOBS_SYSTEMD_DIR", filepath.Join(homeDir, ".config", "systemd", "user"))
+	jobsDir        = tuiui.EnvOr("DJOBS_JOBS_DIR", filepath.Join(tuiui.HomeDir(), "jobs"))
+	systemdUserDir = tuiui.EnvOr("DJOBS_SYSTEMD_DIR", filepath.Join(tuiui.HomeDir(), ".config", "systemd", "user"))
 )
-
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
 
 var onCalendarRe = regexp.MustCompile(`(?m)^OnCalendar=(.+)$`)
 

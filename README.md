@@ -18,6 +18,11 @@ for a resolved/informational state, mauve as the primary accent — via
 the reschedule/delete dialogs. Layout is patterned after
 [dgop](https://github.com/AvengeMedia/dgop)'s bordered-panel Bubble Tea style.
 
+The theme and shared chrome (header/footer/panels, ANSI-aware padding, the
+`ipc ... --json` helpers) come from
+[`tabelatuiui`](https://github.com/ianptkcs/tabelatuiui), the shared UI
+library for my Bubble Tea TUIs.
+
 ![screenshot](screenshot.png)
 
 The header bar reports the recurring/pending/history counts and the jobs
