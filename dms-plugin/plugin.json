@@ -1,7 +1,7 @@
 {
     "id": "djobs",
     "name": "Dank Jobs",
-    "description": "Shows the next pending job and lists all pendentes jobs scheduled via djobs.",
+    "description": "Shows the next pending job and lists all pending jobs scheduled via djobs.",
     "version": "1.0.0",
     "author": "Ian Soares",
     "icon": "schedule",
@@ -10,7 +10,8 @@
         "dankbar-widget"
     ],
     "component": "./Widget.qml",
-    "requires": [
+    "requires_dms": ">=1.2.0",
+    "dependencies": [
         "djobs"
     ],
     "permissions": [

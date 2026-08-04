@@ -24,9 +24,9 @@ PluginComponent {
     property var pendingJobs: []
 
     function statusColor(status) {
-        if (status === "ativo")
+        if (status === "active")
             return Theme.success || "#a6e3a1";
-        if (status === "pausado")
+        if (status === "paused")
             return Theme.warning;
         return Theme.surfaceVariantText;
     }
