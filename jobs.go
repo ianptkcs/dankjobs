@@ -148,6 +148,11 @@ func discoverJobs() []Job {
 			RecurCyclePath: globFirst(dir, "*.recur"),
 		}
 
+		servicePath := filepath.Join(systemdUserDir, name+".service")
+		if _, err := os.Stat(servicePath); err == nil {
+			job.ServicePath = servicePath
+		}
+
 		timerPath := filepath.Join(systemdUserDir, name+".timer")
 		if _, err := os.Stat(timerPath); err == nil {
 			job.TimerPath = timerPath
@@ -156,10 +161,6 @@ func discoverJobs() []Job {
 			job.UnitFileState = props["UnitFileState"]
 			job.NextElapse = props["NextElapseUSecRealtime"]
 			job.ServiceActiveState = serviceActiveState(name)
-			servicePath := filepath.Join(systemdUserDir, name+".service")
-			if _, err := os.Stat(servicePath); err == nil {
-				job.ServicePath = servicePath
-			}
 		}
 		jobs = append(jobs, job)
 	}
@@ -217,7 +218,14 @@ const (
 	statusCompleted
 	statusFailed
 	statusRemoved
+	statusManual
 )
+
+// IsManual reports whether j has a service unit but no timer — a job created
+// without a schedule that only runs when started by hand from the TUI.
+func (j Job) IsManual() bool {
+	return j.TimerPath == "" && j.ServicePath != ""
+}
 
 // Status returns a coarse status kind (for styling) and a plain-text label.
 //
@@ -228,7 +236,8 @@ const (
 // reaches that cleanup line, leaving the units behind exactly like a merely
 // paused job would. The one further signal needed is whether the service
 // unit actually ran and failed (ActiveState == "failed") versus simply not
-// having fired yet.
+// having fired yet. A manual job (service unit, no timer) is never "done":
+// it stays actionable so it can be started again.
 func (j Job) Status() (jobStatusKind, string) {
 	if j.TimerPath != "" {
 		if j.ServiceActiveState == "failed" {
@@ -238,6 +247,9 @@ func (j Job) Status() (jobStatusKind, string) {
 			return statusActive, "active"
 		}
 		return statusPaused, "paused"
+	}
+	if j.IsManual() {
+		return statusManual, "manual"
 	}
 	if j.Log != "" {
 		return statusCompleted, "done"
@@ -249,7 +261,7 @@ func (j Job) Status() (jobStatusKind, string) {
 // i.e. belongs in the "pending" panel rather than "history".
 func (j Job) IsPending() bool {
 	kind, _ := j.Status()
-	return kind == statusActive || kind == statusPaused
+	return kind == statusActive || kind == statusPaused || kind == statusManual
 }
 
 // IsRecurring reports whether j repeats instead of running once. A job with
@@ -376,6 +388,9 @@ const (
 	recurWeekly
 	recurMonthly
 	recurCycle
+	// recurManual runs on demand only — no timer unit, the job fires when the
+	// TUI's "x run now" starts its service.
+	recurManual
 )
 
 var systemdWeekdayAbbr = map[time.Weekday]string{
@@ -528,6 +543,9 @@ func createJob(name, commands, notes string, sched jobSchedule, now time.Time) e
 			"__TIMER_PATH__", timerPath,
 			"__TIMER_NAME__", name+".timer",
 		).Replace(cycleRescheduleTail)
+	case recurManual:
+		// No timer at all — the job runs only when started manually, so
+		// there's nothing to schedule and no self-cleanup tail to add.
 	default: // recurOneshot
 		onCalendar = computeOnCalendar(sched.Minute, sched.Hour, sched.DOM, sched.Month, now)
 		tail = fmt.Sprintf(oneshotCleanupTail, timerPath, servicePath)
@@ -567,28 +585,53 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 `, name, onCalendar)
-	if err := os.WriteFile(timerPath, []byte(timer), 0o644); err != nil {
-		return err
+	if sched.Kind != recurManual {
+		if err := os.WriteFile(timerPath, []byte(timer), 0o644); err != nil {
+			return err
+		}
 	}
 
 	daemonReload()
-	enableNow(name)
+	if sched.Kind != recurManual {
+		enableNow(name)
+	}
+	return nil
+}
+
+// runJob starts j's service unit right now, bypassing its timer — the
+// mechanism behind the TUI's "x run now". Every job has a service unit (a
+// manual one has just the service, no timer); starting it runs the script
+// immediately, and a one-shot job's script then self-removes its units as
+// usual, while recurring/manual jobs stay where they are.
+func runJob(j Job) error {
+	if j.ServicePath == "" {
+		return fmt.Errorf("'%s' has no service unit to start", j.Name)
+	}
+	out, err := exec.Command("systemctl", "--user", "start", j.Name+".service").CombinedOutput()
+	if err != nil {
+		if msg := strings.TrimSpace(string(out)); msg != "" {
+			return fmt.Errorf("%s", msg)
+		}
+		return err
+	}
 	return nil
 }
 
 // removeJobUnits disables and deletes j's timer/service unit files, if it
 // has any — shared by deleteJob and archiveJob, since both need a job to
-// stop firing before its files are touched.
+// stop firing before its files are touched. A manual job has no timer but
+// does have a service unit, which must be removed too or it'd be orphaned.
 func removeJobUnits(j Job) {
-	if j.TimerPath == "" {
-		return
+	if j.TimerPath != "" {
+		disableNow(j.Name)
+		os.Remove(j.TimerPath)
 	}
-	disableNow(j.Name)
-	os.Remove(j.TimerPath)
 	if j.ServicePath != "" {
 		os.Remove(j.ServicePath)
 	}
-	daemonReload()
+	if j.TimerPath != "" || j.ServicePath != "" {
+		daemonReload()
+	}
 }
 
 func deleteJob(j Job, removeFiles bool) error {

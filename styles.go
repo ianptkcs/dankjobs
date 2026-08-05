@@ -36,6 +36,8 @@ func statusStyle(kind jobStatusKind) lipgloss.Style {
 		return theme.Info()
 	case statusFailed:
 		return theme.Error()
+	case statusManual:
+		return theme.Info()
 	default: // statusRemoved
 		return dimStyle()
 	}
@@ -47,7 +49,7 @@ func statusGlyph(kind jobStatusKind) string {
 		return "●"
 	case statusFailed:
 		return "✕"
-	default: // statusRemoved
+	default: // statusManual, statusRemoved
 		return "○"
 	}
 }

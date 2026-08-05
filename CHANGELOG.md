@@ -5,7 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-08-05
+
+### Added
+
+- Manual jobs: creating a job with the new "Manual (no schedule)" recurrence
+  writes the script + service unit but no timer, so it stays in the pending
+  panel (status "manual") instead of ever firing on its own.
+- `x` runs any job now: starts the job's service unit immediately, bypassing
+  its timer. Works for scheduled jobs too — a one-shot run finishes and
+  self-removes as usual, recurring/manual jobs stay in place.
 
 ## [0.2.0-beta.2] - 2026-08-01
 

@@ -103,6 +103,13 @@ a `<name>.recur` sidecar and a self-rescheduling tail in the script instead
 of the usual self-deleting one. See [instructions.md](instructions.md) for
 the exact formats.
 
+Picking **Manual (no schedule)** when creating a job writes the script and
+service unit but no timer — it never fires on its own, stays in the pending
+panel with a `manual` status, and only runs when you hit `x`. `x` works on
+any job too: it starts the job's service immediately, so you can fire a
+scheduled job early without touching its schedule (a one-shot then finishes
+and self-removes as usual).
+
 Panel/header titles and the focused-panel border use whatever accent color
 is currently configured in an installed
 [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) (read
@@ -137,7 +144,8 @@ Drop the resulting binary on your `PATH`.
 
 | Key                 | Action                                          |
 | ------------------- | ------------------------------------------------ |
-| `n`                 | Create a new job (pick one-shot or a recurrence) |
+| `n`                 | Create a new job (one-shot, a recurrence, or manual) |
+| `x`                 | Run the selected job right now (bypasses its timer) |
 | `e`                 | Reschedule the selected job                     |
 | `t`                 | Pause / resume its timer                        |
 | `d`                 | Archive, or delete forever                      |

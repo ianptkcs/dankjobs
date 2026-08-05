@@ -153,6 +153,7 @@ func newCreateForm() *huh.Form {
 					huh.NewOption("Weekly", recurWeekly),
 					huh.NewOption("Monthly", recurMonthly),
 					huh.NewOption("Custom cycle", recurCycle),
+					huh.NewOption("Manual (no schedule)", recurManual),
 				).
 				Value(&kind),
 		),

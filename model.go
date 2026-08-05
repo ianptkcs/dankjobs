@@ -22,6 +22,11 @@ const (
 	modeCreate
 )
 
+// reloadMsg triggers a re-scan of ~/jobs a moment after a "run now" was
+// issued, so a one-shot job that finished (and self-removed its units) moves
+// from pending to history without a manual 'r'.
+type reloadMsg struct{}
+
 // panelFocus selects which of the four panels (recurring, pending, history,
 // or details) currently receives key input — neovim-style pane navigation:
 // Ctrl+h/l move focus one panel left/right among the three side-by-side
@@ -453,6 +458,11 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if _, ok := msg.(reloadMsg); ok {
+		m.reloadJobs()
+		return m, nil
+	}
+
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return m.forwardToFocusedTable(msg)
@@ -533,6 +543,17 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.message = fmt.Sprintf("'%s' %s.", job.Name, state)
 		return m, nil
+	case "x":
+		job := m.currentJob()
+		if job == nil {
+			return m, nil
+		}
+		if err := runJob(*job); err != nil {
+			m.message = fmt.Sprintf("error running '%s': %v", job.Name, err)
+			return m, nil
+		}
+		m.message = fmt.Sprintf("'%s' started.", job.Name)
+		return m, tea.Tick(3*time.Second, func(time.Time) tea.Msg { return reloadMsg{} })
 	case "d":
 		job := m.currentJob()
 		if job == nil {
@@ -663,11 +684,17 @@ func (m appModel) updateCreate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		commands := m.createForm.GetString("commands")
 		notes := m.createForm.GetString("notes")
 		kind, _ := m.createForm.Get("type").(RecurrenceKind)
-		hour, minute, errTime := parseHHMM(m.createForm.GetString("time"))
+
+		hour, minute, errTime := 0, 0, error(nil)
+		if kind != recurManual {
+			hour, minute, errTime = parseHHMM(m.createForm.GetString("time"))
+		}
 
 		sched := jobSchedule{Kind: kind, Hour: hour, Minute: minute}
 		valid := errTime == nil
 		switch kind {
+		case recurManual:
+			// Nothing to schedule — runs only when started manually.
 		case recurDaily:
 			// Hour/minute above is everything a daily schedule needs.
 		case recurWeekly:
@@ -694,11 +721,16 @@ func (m appModel) updateCreate(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if valid {
 			if err := createJob(name, commands, notes, sched, time.Now()); err == nil {
-				m.message = fmt.Sprintf("'%s' created and scheduled.", name)
-				if kind == recurOneshot {
+				if kind == recurManual {
+					m.message = fmt.Sprintf("'%s' created — run it with x.", name)
 					m.focus, m.selectedSide = focusPending, focusPending
 				} else {
-					m.focus, m.selectedSide = focusRecurring, focusRecurring
+					m.message = fmt.Sprintf("'%s' created and scheduled.", name)
+					if kind == recurOneshot {
+						m.focus, m.selectedSide = focusPending, focusPending
+					} else {
+						m.focus, m.selectedSide = focusRecurring, focusRecurring
+					}
 				}
 			} else {
 				m.message = fmt.Sprintf("error creating '%s': %v", name, err)
@@ -808,7 +840,7 @@ func (m appModel) View() string {
 		titleStyle().Render(detailTitle)+"\n\n"+m.renderDetailBody(), m.innerWidth,
 	))
 
-	help := "n new · e reschedule · t pause/resume · d delete/archive · A archived view · u unarchive · r refresh · ctrl+h/j/k/l navigate · j/k scroll details · q quit"
+	help := "n new · e reschedule · t pause/resume · x run now · d delete/archive · A archived view · u unarchive · r refresh · ctrl+h/j/k/l navigate · j/k scroll details · q quit"
 	footerText := help
 	if m.message != "" {
 		footerText = m.message + "   " + help

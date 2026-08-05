@@ -240,6 +240,166 @@ func TestIsRecurring(t *testing.T) {
 	}
 }
 
+func TestIsManual(t *testing.T) {
+	cases := []struct {
+		name string
+		job  Job
+		want bool
+	}{
+		{"no units at all", Job{}, false},
+		{"scheduled (timer + service)", Job{TimerPath: "x", ServicePath: "y"}, false},
+		{"manual (service only)", Job{ServicePath: "y"}, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := c.job.IsManual(); got != c.want {
+				t.Fatalf("IsManual() = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+func TestManualJobStatus(t *testing.T) {
+	job := Job{ServicePath: "/tmp/x.service"}
+	kind, label := job.Status()
+	if kind != statusManual || label != "manual" {
+		t.Fatalf("Status() = %v/%q, want manual", kind, label)
+	}
+	if !job.IsPending() {
+		t.Fatal("manual job should be pending (actionable)")
+	}
+	if job.IsRecurring() {
+		t.Fatal("manual job must not be recurring")
+	}
+}
+
+func TestCreateManualJob(t *testing.T) {
+	hasRealSystemd(t)
+	name := "zz-jobs-tui-test-manual"
+
+	realHome, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	realSystemdDir := filepath.Join(realHome, ".config", "systemd", "user")
+
+	origJobsDir, origSystemdDir := jobsDir, systemdUserDir
+	jobsDir = t.TempDir()
+	systemdUserDir = realSystemdDir
+	t.Cleanup(func() {
+		os.Remove(filepath.Join(systemdUserDir, name+".service"))
+		systemctlUser("daemon-reload")
+		jobsDir, systemdUserDir = origJobsDir, origSystemdDir
+	})
+
+	sched := jobSchedule{Kind: recurManual}
+	if err := createJob(name, "echo manual", "manual notes", sched, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	job := findJob(discoverJobs(), name)
+	if job.TimerPath != "" {
+		t.Fatal("manual job must not have a timer")
+	}
+	if job.ServicePath == "" {
+		t.Fatal("manual job must have a service unit")
+	}
+	if !job.IsManual() {
+		t.Fatal("expected IsManual() = true")
+	}
+	kind, label := job.Status()
+	if kind != statusManual || label != "manual" {
+		t.Fatalf("Status() = %v/%q, want manual", kind, label)
+	}
+	if !job.IsPending() {
+		t.Fatal("manual job should appear in the pending panel")
+	}
+	if job.Body == "" {
+		t.Fatal("expected notes to produce a body file")
+	}
+}
+
+func TestRunManualJob(t *testing.T) {
+	hasRealSystemd(t)
+	name := "zz-jobs-tui-test-run-manual"
+
+	realHome, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	realSystemdDir := filepath.Join(realHome, ".config", "systemd", "user")
+
+	origJobsDir, origSystemdDir := jobsDir, systemdUserDir
+	jobsDir = t.TempDir()
+	systemdUserDir = realSystemdDir
+	marker := filepath.Join(t.TempDir(), "marker.txt")
+	t.Cleanup(func() {
+		os.Remove(filepath.Join(systemdUserDir, name+".service"))
+		systemctlUser("daemon-reload")
+		jobsDir, systemdUserDir = origJobsDir, origSystemdDir
+	})
+
+	sched := jobSchedule{Kind: recurManual}
+	if err := createJob(name, "echo ran > "+marker, "", sched, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	job := findJob(discoverJobs(), name)
+	if err := runJob(job); err != nil {
+		t.Fatalf("runJob: %v", err)
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, err := os.Stat(marker); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("job did not produce its marker file within 10s")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func TestRunJobWithoutService(t *testing.T) {
+	job := Job{Name: "no-unit", Dir: "/tmp/nope"}
+	if err := runJob(job); err == nil {
+		t.Fatal("expected runJob to fail for a job without a service unit")
+	}
+}
+
+func TestDeleteManualJobRemovesService(t *testing.T) {
+	hasRealSystemd(t)
+	name := "zz-jobs-tui-test-delete-manual"
+
+	realHome, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	realSystemdDir := filepath.Join(realHome, ".config", "systemd", "user")
+
+	origJobsDir, origSystemdDir := jobsDir, systemdUserDir
+	jobsDir = t.TempDir()
+	systemdUserDir = realSystemdDir
+	t.Cleanup(func() {
+		systemctlUser("daemon-reload")
+		jobsDir, systemdUserDir = origJobsDir, origSystemdDir
+	})
+
+	sched := jobSchedule{Kind: recurManual}
+	if err := createJob(name, "echo manual", "", sched, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	job := findJob(discoverJobs(), name)
+
+	if err := deleteJob(job, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(systemdUserDir, name+".service")); !os.IsNotExist(err) {
+		t.Fatal("manual job's service unit should be removed on delete")
+	}
+}
+
 func TestComputeRecurringOnCalendar(t *testing.T) {
 	if got, want := computeRecurringOnCalendar(recurDaily, nil, 0, 9, 30), "*-*-* 09:30:00"; got != want {
 		t.Fatalf("daily = %q, want %q", got, want)
