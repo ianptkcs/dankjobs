@@ -414,6 +414,32 @@ func TestComputeRecurringOnCalendar(t *testing.T) {
 	}
 }
 
+func TestScheduleHuman(t *testing.T) {
+	tests := []struct {
+		onCalendar string
+		want       string
+	}{
+		{"", "—"},
+		// One-shot absolute timestamp.
+		{"2026-08-14 09:00:00", "14/08 09:00"},
+		// Daily recurring.
+		{"*-*-* 09:30:00", "09:30"},
+		// Weekly recurring.
+		{"Mon,Tue *-*-* 09:00:00", "Mon,Tue 09:00"},
+		{"Mon,Wed,Fri *-*-* 14:15:00", "Mon,Wed,Fri 14:15"},
+		// Monthly recurring.
+		{"*-*-15 09:00:00", "dia 15 09:00"},
+		// Unknown pattern falls through to raw string.
+		{"garbage", "garbage"},
+	}
+	for _, tt := range tests {
+		j := Job{OnCalendar: tt.onCalendar}
+		if got := j.ScheduleHuman(); got != tt.want {
+			t.Errorf("ScheduleHuman(%q) = %q, want %q", tt.onCalendar, got, tt.want)
+		}
+	}
+}
+
 func TestArchiveAndUnarchive(t *testing.T) {
 	hasRealSystemd(t)
 	job := setupFixture(t, "zz-jobs-tui-test-archive")

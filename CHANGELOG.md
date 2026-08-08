@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-08-08
+
+### Fixed
+
+- DMS plugin popup: date+time of pending jobs was truncated. `ScheduleHuman()`
+  now returns short human-friendly strings for recurring schedules (e.g.
+  `Mon,Tue 09:00` instead of `Mon,Tue *-*-* 09:00:00`), and the plugin widget
+  uses `RowLayout` so the status text always fits.
+
 ## [0.2.0] - 2026-08-05
 
 ### Added
