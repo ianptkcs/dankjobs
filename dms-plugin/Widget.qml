@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Layouts
 import Quickshell
 import qs.Common
 import qs.Services
@@ -123,34 +124,35 @@ PluginComponent {
         width: ListView.view.width
         height: 32
 
-        Row {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: Theme.spacingS
+            anchors.rightMargin: Theme.spacingS
             spacing: Theme.spacingS
 
             Rectangle {
-                width: 8
-                height: 8
+                Layout.preferredWidth: 8
+                Layout.preferredHeight: 8
                 radius: 4
                 color: root.statusColor(itemData ? itemData.status : "")
-                anchors.verticalCenter: parent.verticalCenter
+                Layout.alignment: Qt.AlignVCenter
             }
 
             StyledText {
-                width: parent.width - 100
+                Layout.fillWidth: true
                 text: itemData ? itemData.name : ""
                 font.pixelSize: Theme.fontSizeSmall
                 color: Theme.surfaceText
                 elide: Text.ElideRight
-                anchors.verticalCenter: parent.verticalCenter
+                Layout.alignment: Qt.AlignVCenter
             }
 
             StyledText {
                 text: itemData ? root.statusLabel(itemData.status) + " · " + itemData.schedule_human : ""
                 font.pixelSize: Theme.fontSizeSmall - 2
                 color: Theme.surfaceVariantText
-                anchors.verticalCenter: parent.verticalCenter
+                elide: Text.ElideRight
+                Layout.alignment: Qt.AlignVCenter
             }
         }
     }
@@ -236,6 +238,6 @@ PluginComponent {
         }
     }
 
-    popoutWidth: 300
+    popoutWidth: 380
     popoutHeight: 0
 }

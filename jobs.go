@@ -176,10 +176,36 @@ func (j Job) ScheduleHuman() string {
 		return "—"
 	}
 	t, err := time.Parse("2006-01-02 15:04:05", j.OnCalendar)
-	if err != nil {
-		return j.OnCalendar
+	if err == nil {
+		return fmt.Sprintf("%02d/%02d %02d:%02d", t.Day(), t.Month(), t.Hour(), t.Minute())
 	}
-	return fmt.Sprintf("%02d/%02d %02d:%02d", t.Day(), t.Month(), t.Hour(), t.Minute())
+	return shortenOnCalendar(j.OnCalendar)
+}
+
+// onCalendarRecurring* patterns match the systemd OnCalendar= shapes that
+// computeRecurringOnCalendar produces for daily/weekly/monthly schedules.
+// Each returns a short human-friendly string for display in widgets and the
+// pending panel, instead of the raw systemd expression.
+var (
+	onCalendarDailyRe   = regexp.MustCompile(`^\*-\*-\* (\d{2}:\d{2}):\d{2}$`)
+	onCalendarWeeklyRe  = regexp.MustCompile(`^([A-Z][a-z]{2}(?:,[A-Z][a-z]{2})*) \*-\*-\* (\d{2}:\d{2}):\d{2}$`)
+	onCalendarMonthlyRe = regexp.MustCompile(`^\*-\*-(\d{2}) (\d{2}:\d{2}):\d{2}$`)
+)
+
+// shortenOnCalendar turns a raw systemd OnCalendar= expression into a short
+// human-readable string. One-shot absolute timestamps are already handled by
+// the caller; this covers recurring patterns.
+func shortenOnCalendar(cal string) string {
+	if m := onCalendarWeeklyRe.FindStringSubmatch(cal); m != nil {
+		return m[1] + " " + m[2]
+	}
+	if m := onCalendarDailyRe.FindStringSubmatch(cal); m != nil {
+		return m[1]
+	}
+	if m := onCalendarMonthlyRe.FindStringSubmatch(cal); m != nil {
+		return "dia " + m[1] + " " + m[2]
+	}
+	return cal
 }
 
 // nextElapseLayouts covers the timestamp shapes systemctl's
