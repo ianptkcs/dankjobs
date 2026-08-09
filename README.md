@@ -87,14 +87,14 @@ unit share the same name — no extra tagging required. A job with no matching t
 without a schedule.
 
 ```
-~/jobs/kiwi-pr/
-  kiwi-pr.sh
-  kiwi-pr.log
-  kiwi-pr-body.txt
+~/jobs/<name>/
+  <name>.sh
+  <name>.log
+  <name>-body.txt
 
 ~/.config/systemd/user/
-  kiwi-pr.timer
-  kiwi-pr.service
+  <name>.timer
+  <name>.service
 ```
 
 `DJOBS_JOBS_DIR` / `DJOBS_SYSTEMD_DIR` override the two directories
