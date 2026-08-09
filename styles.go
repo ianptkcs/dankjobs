@@ -5,20 +5,10 @@ import (
 	"github.com/ianptkcs/tabelatuiui"
 )
 
-// Thin wrappers over tabelatuiui's shared chrome, so the model/view code
-// keeps calling the same short helpers it always did. Colors live in the
+// App-specific styles on top of tabelatuiui's shared chrome (called as
+// theme.Header/Footer/Panel/Title/Dim/Modal directly). Colors live in the
 // theme resolved in theme.go (Catppuccin Mocha + the DMS accent).
 
-func headerStyle(width int) lipgloss.Style { return theme.Header(width) }
-func footerStyle(width int) lipgloss.Style { return theme.Footer(width) }
-func panelStyle(focused bool) lipgloss.Style {
-	return theme.Panel(focused)
-}
-func titleStyle() lipgloss.Style { return theme.Title() }
-func dimStyle() lipgloss.Style   { return theme.Dim() }
-func modalBoxStyle() lipgloss.Style {
-	return theme.Modal()
-}
 func padLines(s string, width int) string { return tuiui.PadLines(s, width) }
 
 // statusStyle follows the Catppuccin style guide's semantics, the same
@@ -39,7 +29,7 @@ func statusStyle(kind jobStatusKind) lipgloss.Style {
 	case statusManual:
 		return theme.Info()
 	default: // statusRemoved
-		return dimStyle()
+		return theme.Dim()
 	}
 }
 

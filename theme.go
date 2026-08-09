@@ -1,20 +1,17 @@
 package main
 
 import (
-	"path/filepath"
-
 	"github.com/ianptkcs/tabelatuiui"
 )
 
-var (
-	dmsSettingsPath = tuiui.EnvOr("DJOBS_DMS_SETTINGS", filepath.Join(tuiui.HomeDir(), ".config", "DankMaterialShell", "settings.json"))
-	fallbackAccent  = tuiui.EnvOr("DJOBS_ACCENT", "mauve")
-	// theme mirrors the installed DankMaterialShell's own configured accent
-	// (falling back to a manually chosen Catppuccin accent when DMS isn't
-	// installed/configured) — same lookup tabelaradar and dcal use, kept in
-	// sync so every tool's chrome matches. See tabelatuiui.ResolveTheme.
-	theme = tuiui.ResolveTheme(dmsSettingsPath, fallbackAccent)
+// theme mirrors the installed DankMaterialShell's own configured accent
+// (falling back to a manually chosen Catppuccin accent when DMS isn't
+// installed/configured) — same lookup djobs, tabelaradar and dcal use, kept
+// in sync so every tool's chrome matches. DJOB_DMS_SETTINGS/DJOB_ACCENT env
+// vars override the defaults; see tabelatuiui.NewThemeFromEnv.
+var theme = tuiui.NewThemeFromEnv("DJOB")
 
+var (
 	colBase     = theme.Base
 	colMantle   = theme.Mantle
 	colSurface0 = theme.Surface0

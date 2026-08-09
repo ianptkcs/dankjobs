@@ -7,11 +7,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/ianptkcs/tabelatuiui"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -144,6 +146,10 @@ type appModel struct {
 	deleteFromArchive bool
 
 	createForm *huh.Form
+
+	// helpModal is the "?" overlay listing every keybinding — declared here
+	// (not per-update) so its scroll position survives toggles.
+	helpModal *tuiui.HelpModal
 }
 
 func newJobTable() table.Model {
@@ -174,6 +180,10 @@ func newModel() appModel {
 		historyTable:   newJobTable(),
 		width:          100,
 		height:         30,
+		helpModal: tuiui.NewHelpModal(tuiui.HelpSection{
+			Title:    "Atalhos",
+			Bindings: appKeymap,
+		}),
 	}
 	m.reloadJobs()
 	return m
@@ -443,7 +453,14 @@ func setTableVisibleRows(t *table.Model, rows int) {
 func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if sizeMsg, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width, m.height = sizeMsg.Width, sizeMsg.Height
+		m.helpModal.SetSize(sizeMsg.Width, sizeMsg.Height)
 		m.layout()
+		return m, nil
+	}
+
+	// The help modal swallows all keys while it's open — the app must not
+	// act on them (so "q" closes the modal instead of quitting, etc.).
+	if m.helpModal.Update(msg) {
 		return m, nil
 	}
 
@@ -471,23 +488,26 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	m.message = ""
-	switch keyMsg.String() {
-	case "q", "ctrl+c":
-		return m, tea.Quit
-	case "r":
-		m.reloadJobs()
-		m.message = "List refreshed."
-		return m, nil
-	case "n":
-		m.createForm = newCreateForm()
-		m.mode = modeCreate
-		return m, m.createForm.Init()
 	// Neovim-style pane navigation: Ctrl+h/l move focus one panel left/right
 	// among the three side-by-side panels, pivoting off selectedSide so it
 	// still works from focusDetail; Ctrl+j/k move down into details and
 	// back up. No-op when there's no pane in that direction, same as
 	// vim-tmux-navigator.
-	case "ctrl+h":
+	switch {
+	case key.Matches(keyMsg, keyQuit):
+		return m, tea.Quit
+	case key.Matches(keyMsg, keyHelp):
+		m.helpModal.Toggle()
+		return m, nil
+	case key.Matches(keyMsg, keyRefresh):
+		m.reloadJobs()
+		m.message = "List refreshed."
+		return m, nil
+	case key.Matches(keyMsg, keyNew):
+		m.createForm = newCreateForm()
+		m.mode = modeCreate
+		return m, m.createForm.Init()
+	case key.Matches(keyMsg, keyNavLeft):
 		switch m.selectedSide {
 		case focusPending:
 			m.focus, m.selectedSide = focusRecurring, focusRecurring
@@ -495,7 +515,7 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.focus, m.selectedSide = focusPending, focusPending
 		}
 		return m, nil
-	case "ctrl+l":
+	case key.Matches(keyMsg, keyNavRight):
 		switch m.selectedSide {
 		case focusRecurring:
 			m.focus, m.selectedSide = focusPending, focusPending
@@ -503,17 +523,17 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.focus, m.selectedSide = focusHistory, focusHistory
 		}
 		return m, nil
-	case "ctrl+j":
+	case key.Matches(keyMsg, keyNavDown):
 		if m.focus != focusDetail {
 			m.focus = focusDetail
 		}
 		return m, nil
-	case "ctrl+k":
+	case key.Matches(keyMsg, keyNavUp):
 		if m.focus == focusDetail {
 			m.focus = m.selectedSide
 		}
 		return m, nil
-	case "e":
+	case key.Matches(keyMsg, keyEdit):
 		job := m.currentJob()
 		if job == nil {
 			return m, nil
@@ -527,7 +547,7 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.editForm = newEditForm(jobCopy)
 		m.mode = modeEdit
 		return m, m.editForm.Init()
-	case "t":
+	case key.Matches(keyMsg, keyTogglePause):
 		job := m.currentJob()
 		if job == nil {
 			return m, nil
@@ -545,7 +565,7 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.message = fmt.Sprintf("'%s' %s.", job.Name, state)
 		return m, nil
-	case "x":
+	case key.Matches(keyMsg, keyRunNow):
 		job := m.currentJob()
 		if job == nil {
 			return m, nil
@@ -556,7 +576,7 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.message = fmt.Sprintf("'%s' started.", job.Name)
 		return m, tea.Tick(3*time.Second, func(time.Time) tea.Msg { return reloadMsg{} })
-	case "d":
+	case key.Matches(keyMsg, keyDelete):
 		job := m.currentJob()
 		if job == nil {
 			return m, nil
@@ -568,7 +588,7 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.deleteForm = newDeleteForm(jobCopy, archived)
 		m.mode = modeDelete
 		return m, m.deleteForm.Init()
-	case "A":
+	case key.Matches(keyMsg, keyToggleArchive):
 		if m.historyMode == historyModeNormal {
 			m.historyMode = historyModeArchived
 			m.message = "Showing archived jobs."
@@ -579,7 +599,7 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.focus, m.selectedSide = focusHistory, focusHistory
 		m.reloadJobs()
 		return m, nil
-	case "u":
+	case key.Matches(keyMsg, keyUnarchive):
 		if m.historyMode != historyModeArchived {
 			return m, nil
 		}
@@ -806,16 +826,16 @@ func (m appModel) View() string {
 	if avail := m.width - 4; avail > 0 {
 		headerText = strings.TrimRight(padLines(headerText, avail), " ")
 	}
-	header := headerStyle(m.width).Render(headerText)
+	header := theme.Header(m.width).Render(headerText)
 
 	recurringView := colorizeStatusColumn(m.recurringTable.View(), m.recurringJobs, m.recurringTable.Cursor(), m.recurringStatusOffset, m.statusCellWidth)
-	recurringBox := panelStyle(m.focus == focusRecurring).Render(padLines(
-		titleStyle().Render("recurring")+"\n\n"+recurringView, m.recurringInnerWidth,
+	recurringBox := theme.Panel(m.focus == focusRecurring).Render(padLines(
+		theme.Title().Render("recurring")+"\n\n"+recurringView, m.recurringInnerWidth,
 	))
 
 	pendingView := colorizeStatusColumn(m.pendingTable.View(), m.pendingJobs, m.pendingTable.Cursor(), m.pendingStatusOffset, m.statusCellWidth)
-	pendingBox := panelStyle(m.focus == focusPending).Render(padLines(
-		titleStyle().Render("pending")+"\n\n"+pendingView, m.pendingInnerWidth,
+	pendingBox := theme.Panel(m.focus == focusPending).Render(padLines(
+		theme.Title().Render("pending")+"\n\n"+pendingView, m.pendingInnerWidth,
 	))
 
 	// Archived jobs have no meaningful Status() (their timer is long gone),
@@ -827,8 +847,8 @@ func (m appModel) View() string {
 	} else {
 		historyView = colorizeStatusColumn(historyView, m.historyJobs, m.historyTable.Cursor(), m.historyStatusOffset, m.statusCellWidth)
 	}
-	historyBox := panelStyle(m.focus == focusHistory).Render(padLines(
-		titleStyle().Render(historyTitle)+"\n\n"+historyView, m.historyInnerWidth,
+	historyBox := theme.Panel(m.focus == focusHistory).Render(padLines(
+		theme.Title().Render(historyTitle)+"\n\n"+historyView, m.historyInnerWidth,
 	))
 
 	// Recurring, pending, and history sit side by side, equal width split.
@@ -838,26 +858,19 @@ func (m appModel) View() string {
 	if total := len(m.currentDetailLines()); total > m.detailMaxLines {
 		detailTitle = fmt.Sprintf("details (%d–%d/%d)", m.detailScroll+1, min(m.detailScroll+m.detailMaxLines, total), total)
 	}
-	detailBox := panelStyle(m.focus == focusDetail).Render(padLines(
-		titleStyle().Render(detailTitle)+"\n\n"+m.renderDetailBody(), m.innerWidth,
+	detailBox := theme.Panel(m.focus == focusDetail).Render(padLines(
+		theme.Title().Render(detailTitle)+"\n\n"+m.renderDetailBody(), m.innerWidth,
 	))
 
-	help := "n new · e reschedule · t pause/resume · x run now · d delete/archive · A archived view · u unarchive · r refresh · ctrl+h/j/k/l navigate · j/k scroll details · q quit"
-	footerText := help
-	if m.message != "" {
-		footerText = m.message + "   " + help
-	}
-	// Must be pre-truncated like headerText above: footerStyle sets Width(),
-	// which word-wraps overflow instead of truncating it. An untruncated
-	// wrap silently turns the footer into 2 lines, breaking layout()'s fixed
-	// footerLines=1 budget and pushing everything above it (including the
-	// jobs row) up past the top of the altscreen.
-	if avail := m.width - 4; avail > 0 {
-		footerText = strings.TrimRight(padLines(footerText, avail), " ")
-	}
-	footer := footerStyle(m.width).Render(footerText)
+	footer := tuiui.NewFooter(appKeymap...).
+		Status(m.message).
+		Render(m.width, theme)
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, jobsRow, detailBox, footer)
+	view := lipgloss.JoinVertical(lipgloss.Left, header, jobsRow, detailBox, footer)
+	if m.helpModal.Visible() {
+		return m.helpModal.View(theme)
+	}
+	return view
 }
 
 // currentDetailLines is the full (unscrolled, unclipped) detail text for
@@ -891,7 +904,7 @@ func (m appModel) maxDetailScroll() int {
 func (m appModel) renderDetailBody() string {
 	lines := m.currentDetailLines()
 	if lines == nil {
-		lines = []string{dimStyle().Render(fmt.Sprintf("No jobs in %s (recurring, pending, or history).", jobsDir))}
+		lines = []string{theme.Dim().Render(fmt.Sprintf("No jobs in %s (recurring, pending, or history).", jobsDir))}
 	}
 	scroll := m.detailScroll
 	if max := m.maxDetailScroll(); scroll > max {
@@ -998,6 +1011,6 @@ func (m appModel) renderModal(title, body string) string {
 	if height <= 0 {
 		height = 30
 	}
-	box := modalBoxStyle().Render(titleStyle().Render(title) + "\n\n" + body)
+	box := theme.Modal().Render(theme.Title().Render(title) + "\n\n" + body)
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
 }
