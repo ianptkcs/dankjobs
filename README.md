@@ -2,7 +2,7 @@
 
 # Dank Jobs
 
-[![Go Version](https://img.shields.io/github/go-mod/go-version/ianptkcs/djobs?style=flat-square&logo=go&logoColor=white&color=00ADD8)](go.mod)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/ianptkcs/dankjobs?style=flat-square&logo=go&logoColor=white&color=00ADD8)](go.mod)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Built with Bubble Tea](https://img.shields.io/badge/built%20with-Bubble%20Tea-ff69b4?style=flat-square)](https://github.com/charmbracelet/bubbletea)
 [![Powered by tabelatuiui](https://img.shields.io/badge/theme-tabelatuiui-d6b4f7?style=flat-square)](https://github.com/TabelaDev/tabelatuiui)
@@ -135,8 +135,8 @@ own `n` create flow below.
 Requires Go 1.26+.
 
 ```bash
-git clone https://github.com/ianptkcs/djobs.git
-cd djobs
+git clone https://github.com/ianptkcs/dankjobs.git
+cd dankjobs
 go build -o djobs .
 ```
 
