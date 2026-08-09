@@ -11,6 +11,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/mattn/go-runewidth"
 )
 
 type mode int
@@ -912,25 +914,76 @@ func (m appModel) renderDetailBody() string {
 // each cell with runewidth.Truncate, which isn't ANSI-aware and counts
 // escape-code bytes as visible width, mangling short colored strings well
 // before they'd actually need truncating. Post-processing the plain
-// rendered text instead sidesteps that entirely. The row at `cursor` is
-// left untouched — bubbles/table already wraps it in its own Selected
-// style, and nesting another color in there would reset-terminate that
-// highlight partway through the row.
+// rendered text instead sidesteps that entirely.
+//
+// Each line is matched back to its Job by the displayed name cell rather
+// than by line position: bubbles/table renders rows from an internal
+// viewport window (its unexported `start` + viewport `YOffset`) that isn't
+// recoverable from the public API, so positional math drifts as soon as the
+// table scrolls. Name matching is exact even for "…"-truncated names, and
+// unambiguous because job names are unique. The row at `cursor` is left
+// untouched — bubbles/table already wraps it in its own Selected style, and
+// nesting another color in there would reset-terminate that highlight
+// partway through the row.
 func colorizeStatusColumn(view string, jobs []Job, cursor int, offset, width int) string {
+	// The name column sits right before the when + status columns, so its
+	// content width is recoverable from the status offset: name + 2 padding
+	// + when + 2 padding = offset, and `when` is a fixed constant.
+	nameWidth := offset - whenColWidth - 4
+
+	type match struct {
+		job  Job
+		when string
+	}
+	byName := make(map[string][]match, len(jobs))
+	for _, j := range jobs {
+		displayed := runewidth.Truncate(j.Name, nameWidth, "…")
+		byName[displayed] = append(byName[displayed], match{j, j.HistoryWhen()})
+	}
+
 	lines := strings.Split(view, "\n")
 	for i := range lines {
-		rowIdx := i - 1 // line 0 is the table's own header row
-		if rowIdx < 0 || rowIdx >= len(jobs) || rowIdx == cursor {
+		if i == 0 { // line 0 is the table's own header row
 			continue
 		}
 		line := []rune(lines[i])
 		if offset+width > len(line) {
 			continue
 		}
+		// Strip ANSI up front so fixed-width slices line up even on the
+		// selected row, which bubbles wraps in its Selected style.
+		clean := []rune(ansi.Strip(lines[i]))
+		if len(clean) < nameWidth+2 {
+			continue
+		}
+		displayed := strings.TrimRight(string(clean[:nameWidth+2]), " ")
+		cands := byName[displayed]
+		if len(cands) == 0 {
+			continue
+		}
+		var job *Job
+		if len(cands) == 1 {
+			job = &cands[0].job
+		} else {
+			// Truncated-name collision — disambiguate by the date column.
+			when := strings.TrimRight(string(clean[nameWidth+2:nameWidth+2+whenColWidth+2]), " ")
+			for k := range cands {
+				if cands[k].when == when {
+					job = &cands[k].job
+					break
+				}
+			}
+			if job == nil {
+				continue
+			}
+		}
+		if job.Name == jobName(jobs, cursor) {
+			continue
+		}
 		cell := string(line[offset : offset+width])
 		trimmed := strings.TrimRight(cell, " ")
 		trailing := cell[len(trimmed):]
-		kind, _ := jobs[rowIdx].Status()
+		kind, _ := job.Status()
 		colored := statusStyle(kind).Render(trimmed)
 		lines[i] = string(line[:offset]) + colored + trailing + string(line[offset+width:])
 	}

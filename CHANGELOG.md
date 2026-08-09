@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-08-09
+
+### Fixed
+
+- History panel: status column colors (and the selection highlight) broke when
+  scrolling past the visible window with `j`/`k`. `colorizeStatusColumn` mapped
+  each rendered line to a job by line position, but `bubbles/table` scrolls an
+  internal viewport window that isn't derivable from its public API, so colors
+  drifted once the cursor left the first page. It now matches each line back to
+  its job by the displayed name cell, which is exact even for truncated names —
+  this also fixes the same latent bug in the recurring and pending panels.
+
 ## [0.2.1] - 2026-08-08
 
 ### Fixed
@@ -64,7 +76,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and status-bar widgets.
 - DankMaterialShell accent-color integration, with `DJOBS_ACCENT` fallback.
 
-[Unreleased]: https://github.com/ianptkcs/djobs/compare/v0.2.0-beta.2...HEAD
+[Unreleased]: https://github.com/ianptkcs/djobs/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/ianptkcs/djobs/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/ianptkcs/djobs/compare/v0.2.0-beta.2...v0.2.1
 [0.2.0-beta.2]: https://github.com/ianptkcs/djobs/compare/v0.2.0-beta.1...v0.2.0-beta.2
 [0.2.0-beta.1]: https://github.com/ianptkcs/djobs/compare/v0.1.0...v0.2.0-beta.1
 [0.1.0]: https://github.com/ianptkcs/djobs/releases/tag/v0.1.0
