@@ -147,9 +147,11 @@ type appModel struct {
 
 	createForm *huh.Form
 
-	// helpModal is the "?" overlay listing every keybinding — declared here
-	// (not per-update) so its scroll position survives toggles.
-	helpModal *tuiui.HelpModal
+	// helpModal is the "?" overlay listing every keybinding; settingsModal is
+	// the "," overlay that lets the user rebind them. Both read from reg, so
+	// they're declared once here (not per-update) and reflect each other.
+	helpModal     *tuiui.HelpModal
+	settingsModal *tuiui.SettingsModal
 }
 
 func newJobTable() table.Model {
@@ -174,6 +176,9 @@ func newJobTable() table.Model {
 }
 
 func newModel() appModel {
+	if err := reg.Load(); err != nil {
+		// Corrupted/missing override file: keep pure defaults.
+	}
 	m := appModel{
 		recurringTable: newJobTable(),
 		pendingTable:   newJobTable(),
@@ -181,9 +186,10 @@ func newModel() appModel {
 		width:          100,
 		height:         30,
 		helpModal: tuiui.NewHelpModal(tuiui.HelpSection{
-			Title:    "Atalhos",
-			Bindings: appKeymap,
+			Title:      "Atalhos",
+			BindingsFn: reg.Bindings,
 		}),
+		settingsModal: tuiui.NewSettingsModal(reg),
 	}
 	m.reloadJobs()
 	return m
@@ -454,12 +460,16 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if sizeMsg, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width, m.height = sizeMsg.Width, sizeMsg.Height
 		m.helpModal.SetSize(sizeMsg.Width, sizeMsg.Height)
+		m.settingsModal.SetSize(sizeMsg.Width, sizeMsg.Height)
 		m.layout()
 		return m, nil
 	}
 
-	// The help modal swallows all keys while it's open — the app must not
-	// act on them (so "q" closes the modal instead of quitting, etc.).
+	// The settings/help modals swallow all keys while open — the app must
+	// not act on them (so "q" closes the modal instead of quitting, etc.).
+	if m.settingsModal.Update(msg) {
+		return m, nil
+	}
 	if m.helpModal.Update(msg) {
 		return m, nil
 	}
@@ -494,20 +504,23 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// back up. No-op when there's no pane in that direction, same as
 	// vim-tmux-navigator.
 	switch {
-	case key.Matches(keyMsg, keyQuit):
+	case key.Matches(keyMsg, resolve("quit")):
 		return m, tea.Quit
-	case key.Matches(keyMsg, keyHelp):
+	case key.Matches(keyMsg, resolve("help")):
 		m.helpModal.Toggle()
 		return m, nil
-	case key.Matches(keyMsg, keyRefresh):
+	case key.Matches(keyMsg, resolve("settings")):
+		m.settingsModal.Toggle()
+		return m, nil
+	case key.Matches(keyMsg, resolve("refresh")):
 		m.reloadJobs()
 		m.message = "List refreshed."
 		return m, nil
-	case key.Matches(keyMsg, keyNew):
+	case key.Matches(keyMsg, resolve("new")):
 		m.createForm = newCreateForm()
 		m.mode = modeCreate
 		return m, m.createForm.Init()
-	case key.Matches(keyMsg, keyNavLeft):
+	case key.Matches(keyMsg, resolve("nav-left")):
 		switch m.selectedSide {
 		case focusPending:
 			m.focus, m.selectedSide = focusRecurring, focusRecurring
@@ -515,7 +528,7 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.focus, m.selectedSide = focusPending, focusPending
 		}
 		return m, nil
-	case key.Matches(keyMsg, keyNavRight):
+	case key.Matches(keyMsg, resolve("nav-right")):
 		switch m.selectedSide {
 		case focusRecurring:
 			m.focus, m.selectedSide = focusPending, focusPending
@@ -523,17 +536,17 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.focus, m.selectedSide = focusHistory, focusHistory
 		}
 		return m, nil
-	case key.Matches(keyMsg, keyNavDown):
+	case key.Matches(keyMsg, resolve("nav-down")):
 		if m.focus != focusDetail {
 			m.focus = focusDetail
 		}
 		return m, nil
-	case key.Matches(keyMsg, keyNavUp):
+	case key.Matches(keyMsg, resolve("nav-up")):
 		if m.focus == focusDetail {
 			m.focus = m.selectedSide
 		}
 		return m, nil
-	case key.Matches(keyMsg, keyEdit):
+	case key.Matches(keyMsg, resolve("edit")):
 		job := m.currentJob()
 		if job == nil {
 			return m, nil
@@ -547,7 +560,7 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.editForm = newEditForm(jobCopy)
 		m.mode = modeEdit
 		return m, m.editForm.Init()
-	case key.Matches(keyMsg, keyTogglePause):
+	case key.Matches(keyMsg, resolve("toggle-pause")):
 		job := m.currentJob()
 		if job == nil {
 			return m, nil
@@ -565,7 +578,7 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.message = fmt.Sprintf("'%s' %s.", job.Name, state)
 		return m, nil
-	case key.Matches(keyMsg, keyRunNow):
+	case key.Matches(keyMsg, resolve("run-now")):
 		job := m.currentJob()
 		if job == nil {
 			return m, nil
@@ -576,7 +589,7 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.message = fmt.Sprintf("'%s' started.", job.Name)
 		return m, tea.Tick(3*time.Second, func(time.Time) tea.Msg { return reloadMsg{} })
-	case key.Matches(keyMsg, keyDelete):
+	case key.Matches(keyMsg, resolve("delete")):
 		job := m.currentJob()
 		if job == nil {
 			return m, nil
@@ -588,7 +601,7 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.deleteForm = newDeleteForm(jobCopy, archived)
 		m.mode = modeDelete
 		return m, m.deleteForm.Init()
-	case key.Matches(keyMsg, keyToggleArchive):
+	case key.Matches(keyMsg, resolve("toggle-archive")):
 		if m.historyMode == historyModeNormal {
 			m.historyMode = historyModeArchived
 			m.message = "Showing archived jobs."
@@ -599,7 +612,7 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.focus, m.selectedSide = focusHistory, focusHistory
 		m.reloadJobs()
 		return m, nil
-	case key.Matches(keyMsg, keyUnarchive):
+	case key.Matches(keyMsg, resolve("unarchive")):
 		if m.historyMode != historyModeArchived {
 			return m, nil
 		}
@@ -862,11 +875,14 @@ func (m appModel) View() string {
 		theme.Title().Render(detailTitle)+"\n\n"+m.renderDetailBody(), m.innerWidth,
 	))
 
-	footer := tuiui.NewFooter(appKeymap...).
+	footer := tuiui.NewFooter(reg.Bindings()...).
 		Status(m.message).
 		Render(m.width, theme)
 
 	view := lipgloss.JoinVertical(lipgloss.Left, header, jobsRow, detailBox, footer)
+	if m.settingsModal.Visible() {
+		return m.settingsModal.View(theme)
+	}
 	if m.helpModal.Visible() {
 		return m.helpModal.View(theme)
 	}

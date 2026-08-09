@@ -8,7 +8,7 @@ require (
 	github.com/charmbracelet/huh v1.0.0
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/ansi v0.11.6
-	github.com/ianptkcs/tabelatuiui v0.2.0
+	github.com/ianptkcs/tabelatuiui v0.3.0
 	github.com/mattn/go-runewidth v0.0.19
 )
 
