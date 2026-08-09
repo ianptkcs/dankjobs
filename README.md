@@ -130,6 +130,19 @@ See [instructions.md](instructions.md) for the full convention — useful if
 you (or an AI agent) want to write a job by hand instead of using djobs'
 own `n` create flow below.
 
+## DMS widget
+
+If you use [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell),
+the `dms-plugin/` directory is a dankbar widget that shows the next pending
+job and lists everything still scheduled. Symlink it into DMS's plugins dir
+(restart DMS after changing the link):
+
+```bash
+ln -s "$(pwd)/dms-plugin" ~/.config/DankMaterialShell/plugins/djobs
+```
+
+![dankbar widget](plugin-screenshot.png)
+
 ## Install
 
 Requires Go 1.26+.
