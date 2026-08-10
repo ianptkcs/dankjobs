@@ -29,7 +29,11 @@ func init() {
 		tuiui.Action{ID: "toggle-pause", Help: "pause/resume", Keys: []string{"t"}},
 		tuiui.Action{ID: "run-now", Help: "run now", Keys: []string{"x"}},
 		tuiui.Action{ID: "delete", Help: "delete/archive", Keys: []string{"d"}},
-		tuiui.Action{ID: "toggle-archive", Help: "archived view", Keys: []string{"A"}},
+		tuiui.Action{ID: "archive-all", Help: "archive all in panel", Keys: []string{"A"}},
+		tuiui.Action{ID: "delete-all", Help: "delete all in panel", Keys: []string{"D"}},
+		tuiui.Action{ID: "select-toggle", Help: "mark/unmark", Keys: []string{" "}, Label: "space"},
+		tuiui.Action{ID: "select-clear", Help: "clear selection", Keys: []string{"esc"}},
+		tuiui.Action{ID: "toggle-archive", Help: "archived view", Keys: []string{"a"}},
 		tuiui.Action{ID: "unarchive", Help: "unarchive", Keys: []string{"u"}},
 		tuiui.Action{ID: "scroll-detail", Help: "scroll details", Keys: []string{"j", "k", "up", "down"}, Label: "j/k"},
 	)

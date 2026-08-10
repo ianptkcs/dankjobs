@@ -55,12 +55,22 @@ service unit shows `ActiveState=failed`), and **removed** (its schedule was
 deleted, or it was never scheduled, before ever running). Each side panel
 caps at 8 visible rows regardless of terminal height, scrolling past that.
 
-Pressing `A` swaps the history panel into an **archived** view instead of
+Pressing `a` swaps the history panel into an **archived** view instead of
 deleting a job for good — `d` offers Archive as well as Delete forever, and
 an archived job's directory just moves under `~/jobs/.archive/<name>/`
 (invisible to the normal panels) until `u` unarchives it back.
 
 ![archived view](screenshot-archived.png)
+
+You can also batch — `space` marks/unmarks the job under the cursor: a marked
+row is highlighted (bold, tinted background, `*` before the name) and the
+panel title shows the count. `d` then offers Archive/Delete forever for
+**all** marked jobs in that panel at once (still with the confirmation
+modal). Without marking anything, `A` archives every job in the focused
+panel and `D` deletes them all forever — both preselect their choice in the
+same confirmation modal, so a single Enter confirms. `esc` clears the
+marks. Marks are scoped per panel, so they never leak across
+recurring/pending/history.
 
 **details** shows everything djobs knows about the selected job: its
 directory, the timer's schedule/status and next elapse time (recurring and
@@ -167,8 +177,12 @@ Drop the resulting binary on your `PATH`.
 | `x`                 | Run the selected job right now (bypasses its timer) |
 | `e`                 | Reschedule the selected job                     |
 | `t`                 | Pause / resume its timer                        |
-| `d`                 | Archive, or delete forever                      |
-| `A`                 | Toggle the history panel into an archived view  |
+| `d`                 | Archive, or delete forever (all marked jobs, if any) |
+| `A`                 | Archive all jobs in the focused panel          |
+| `D`                 | Delete all jobs in the focused panel forever   |
+| `space`             | Mark / unmark the selected job                       |
+| `esc`               | Clear all marks                                       |
+| `a`                 | Toggle the history panel into an archived view  |
 | `u`                 | Unarchive the selected job (while in that view) |
 | `r`                 | Refresh the list                                |
 | `q`                 | Quit                                             |

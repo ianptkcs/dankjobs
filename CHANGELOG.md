@@ -5,6 +5,29 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-08-09
+
+### Added
+
+- Multi-select: `space` marks/unmarks the job under the cursor, with the
+  marked count shown in the panel title. A marked row is highlighted
+  (bold, tinted background, `*` before the name). `d` then archives or
+  deletes forever all marked jobs in that panel at once (still behind the
+  confirmation modal); `esc` clears the marks. Marks are scoped per panel,
+  so they never leak across recurring/pending/history.
+- Bulk shortcuts without marking: `A` archives every job in the focused
+  panel and `D` deletes them all forever — both preselect their choice in
+  the same confirmation modal, so a single Enter confirms.
+
+### Fixed
+
+- Status column colors never applied after the 0.2.2 name-cell matching
+  rework: bubbles pads every cell with a leading space and the pending
+  panel's middle column is wider than the history one, both of which broke
+  the name lookup (an unmarked row's status rendered plain). Matching now
+  trims the cell padding and uses the panel's real middle-column width, and
+  tolerates a narrow panel clipping the status cell's right padding.
+
 ## [0.2.2] - 2026-08-09
 
 ### Fixed
@@ -76,7 +99,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and status-bar widgets.
 - DankMaterialShell accent-color integration, with `DJOBS_ACCENT` fallback.
 
-[Unreleased]: https://github.com/ianptkcs/djobs/compare/v0.2.2...HEAD
+[0.3.0]: https://github.com/ianptkcs/djobs/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/ianptkcs/djobs/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/ianptkcs/djobs/compare/v0.2.0-beta.2...v0.2.1
 [0.2.0-beta.2]: https://github.com/ianptkcs/djobs/compare/v0.2.0-beta.1...v0.2.0-beta.2

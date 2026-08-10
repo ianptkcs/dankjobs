@@ -259,11 +259,13 @@ const (
 	deleteChoiceCancel  = "cancel"
 )
 
-// newDeleteForm builds the "d" confirmation modal. archived jobs have
-// already been moved out of the way, so "Archive" (which would just try to
-// move a job into its own directory) is dropped from that case, leaving
-// only Delete forever / Cancel.
-func newDeleteForm(j Job, archived bool) *huh.Form {
+// newDeleteForm builds the "d" confirmation modal for one or more jobs.
+// preselect names the choice that starts highlighted ("" for none) — the
+// "archive all"/"delete all" shortcuts pass their intent so one Enter is
+// enough. archived jobs have already been moved out of the way, so
+// "Archive" (which would just try to move a job into its own directory) is
+// dropped from that case, leaving only Delete forever / Cancel.
+func newDeleteForm(jobs []Job, archived bool, preselect string) *huh.Form {
 	options := []huh.Option[string]{
 		huh.NewOption("Archive", deleteChoiceArchive),
 		huh.NewOption("Delete forever", deleteChoiceForever),
@@ -275,13 +277,15 @@ func newDeleteForm(j Job, archived bool) *huh.Form {
 			huh.NewOption("Cancel", deleteChoiceCancel),
 		}
 	}
+	sel := huh.NewSelect[string]().
+		Key("choice").
+		Title(fmt.Sprintf("Delete %s?", deleteSubject(jobs))).
+		Options(options...)
+	if preselect != "" {
+		sel = sel.Value(&preselect)
+	}
 	return huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Key("choice").
-				Title(fmt.Sprintf("Delete '%s'?", j.Name)).
-				Options(options...),
-		),
+		huh.NewGroup(sel),
 	).
 		WithTheme(huh.ThemeCatppuccin()).
 		WithShowHelp(true).

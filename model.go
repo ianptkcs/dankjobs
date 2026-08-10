@@ -112,6 +112,13 @@ type appModel struct {
 	// focusRecurring, focusPending, or focusHistory, never focusDetail. It
 	// only changes on Ctrl+h/l, so it survives a Ctrl+j trip into details.
 	selectedSide panelFocus
+	// selected tracks the multi-select marks ("space") per side panel,
+	// keyed by job name. Marks are scoped to the panel where they were made,
+	// so 'd' never acts on a job selected in another panel; a job name is
+	// unique across the whole app at any moment, so the set needs no extra
+	// disambiguation. The history panel's set applies to whichever list is
+	// currently displayed (history or archived).
+	selected map[panelFocus]map[string]bool
 	// detailScroll is the first visible line of the current job's detail
 	// text, adjusted by j/k (or the arrow keys) while focus is on details.
 	detailScroll int
@@ -139,7 +146,7 @@ type appModel struct {
 	editJob  *Job
 	editForm *huh.Form
 
-	deleteJob  *Job
+	deleteJobs []Job
 	deleteForm *huh.Form
 	// deleteFromArchive records which variant of newDeleteForm is showing,
 	// so updateDelete knows an "Archive" choice isn't even on offer.
@@ -183,6 +190,7 @@ func newModel() appModel {
 		recurringTable: newJobTable(),
 		pendingTable:   newJobTable(),
 		historyTable:   newJobTable(),
+		selected:       map[panelFocus]map[string]bool{},
 		width:          100,
 		height:         30,
 		helpModal: tuiui.NewHelpModal(tuiui.HelpSection{
@@ -245,6 +253,147 @@ func (m *appModel) currentJob() *Job {
 	return &jobs[idx]
 }
 
+// toggleSelection marks/unmarks the job under the cursor in the focused
+// panel ("space"). Marks are per-panel (see appModel.selected).
+func (m *appModel) toggleSelection() {
+	job := m.currentJob()
+	if job == nil {
+		return
+	}
+	set := m.selected[m.selectedSide]
+	if set == nil {
+		set = map[string]bool{}
+		m.selected[m.selectedSide] = set
+	}
+	if set[job.Name] {
+		delete(set, job.Name)
+	} else {
+		set[job.Name] = true
+	}
+}
+
+// selectedJobs returns, in display order, the jobs of the given side that
+// are currently marked. Empty when nothing is marked — callers fall back to
+// the cursor job.
+func (m *appModel) selectedJobs(side panelFocus) []Job {
+	set := m.selected[side]
+	if len(set) == 0 {
+		return nil
+	}
+	var jobs []Job
+	for _, j := range m.allJobs(side) {
+		if set[j.Name] {
+			jobs = append(jobs, j)
+		}
+	}
+	return jobs
+}
+
+// allJobs returns every job currently displayed in the given side panel, in
+// display order.
+func (m *appModel) allJobs(side panelFocus) []Job {
+	switch side {
+	case focusRecurring:
+		return m.recurringJobs
+	case focusPending:
+		return m.pendingJobs
+	default:
+		return m.activeHistoryJobs()
+	}
+}
+
+// startBulkDelete opens the delete confirmation modal over every job in the
+// focused panel, with `choice` preselected — the mechanism behind the
+// "archive all" / "delete all" shortcuts. Returns the (model, cmd) pair for
+// Update to return.
+func (m appModel) startBulkDelete(choice string) (tea.Model, tea.Cmd) {
+	jobs := m.allJobs(m.selectedSide)
+	if len(jobs) == 0 {
+		m.message = "No jobs in this panel."
+		return m, nil
+	}
+	archived := m.selectedSide == focusHistory && m.historyMode == historyModeArchived
+	m.deleteJobs = jobs
+	m.deleteFromArchive = archived
+	m.deleteForm = newDeleteForm(jobs, archived, choice)
+	m.mode = modeDelete
+	return m, m.deleteForm.Init()
+}
+
+func (m *appModel) totalSelected() int {
+	n := 0
+	for _, set := range m.selected {
+		n += len(set)
+	}
+	return n
+}
+
+// pruneSelection drops marks for jobs that no longer exist in their panel's
+// current list (e.g. a one-shot that ran and left history, or a job that was
+// archived/deleted). Called from reloadJobs after the lists are rebuilt.
+func (m *appModel) pruneSelection() {
+	for _, side := range []panelFocus{focusRecurring, focusPending, focusHistory} {
+		set := m.selected[side]
+		if len(set) == 0 {
+			continue
+		}
+		list := m.allJobs(side)
+		seen := make(map[string]bool, len(list))
+		for _, j := range list {
+			seen[j.Name] = true
+		}
+		for name := range set {
+			if !seen[name] {
+				delete(set, name)
+			}
+		}
+	}
+}
+
+// nameCell returns the name column's cell value for j in the given panel,
+// prefixed with the "*" selection marker when j is marked. The marker counts
+// against the column width (colorizeStatusColumn strips it back off), so
+// marked rows with long names show one rune less of the name — an accepted
+// tradeoff for alignment staying exact.
+func (m *appModel) nameCell(j Job, side panelFocus) string {
+	if m.selected[side][j.Name] {
+		return "*" + j.Name
+	}
+	return j.Name
+}
+
+// panelTitle appends the panel's mark count to its title, so "history (3)"
+// makes a pending batch action visible at a glance. No suffix when nothing
+// is marked, keeping the title short in the common case.
+func (m *appModel) panelTitle(base string, side panelFocus) string {
+	if n := len(m.selected[side]); n > 0 {
+		return fmt.Sprintf("%s (%d)", base, n)
+	}
+	return base
+}
+
+// footerStatus prefers the transient action message, but falls back to a
+// selection hint while marks are active — so the "space toggles / d acts"
+// reminder shows instead of a blank footer.
+func (m *appModel) footerStatus() string {
+	if m.message != "" {
+		return m.message
+	}
+	if n := m.totalSelected(); n > 0 {
+		return fmt.Sprintf("%d selected — space toggles, d acts, esc clears", n)
+	}
+	return ""
+}
+
+// deleteSubject names what a delete form is about: a single job quoted by
+// name, or a bare count for a batch.
+func deleteSubject(jobs []Job) string {
+	if len(jobs) == 1 {
+		return fmt.Sprintf("'%s'", jobs[0].Name)
+	}
+	return fmt.Sprintf("%d jobs", len(jobs))
+}
+
 // reloadJobs re-scans ~/jobs, splits jobs into "recurring" (has a timer and
 // repeats), "pending" (one-shot, still on an active or paused timer), and
 // "history" (resolved — completed, failed, or removed before ever running),
@@ -292,7 +441,7 @@ func (m *appModel) reloadJobs() {
 	recurringRows := make([]table.Row, len(m.recurringJobs))
 	for i, j := range m.recurringJobs {
 		_, label := j.Status()
-		recurringRows[i] = table.Row{j.Name, j.NextRunHuman(), label}
+		recurringRows[i] = table.Row{m.nameCell(j, focusRecurring), j.NextRunHuman(), label}
 	}
 	m.recurringTable.SetRows(recurringRows)
 	m.recurringTable.SetCursor(recurringSelected)
@@ -301,7 +450,7 @@ func (m *appModel) reloadJobs() {
 	pendingRows := make([]table.Row, len(m.pendingJobs))
 	for i, j := range m.pendingJobs {
 		_, label := j.Status()
-		pendingRows[i] = table.Row{j.Name, j.ScheduleHuman(), label}
+		pendingRows[i] = table.Row{m.nameCell(j, focusPending), j.ScheduleHuman(), label}
 	}
 	m.pendingTable.SetRows(pendingRows)
 	m.pendingTable.SetCursor(pendingSelected)
@@ -314,10 +463,12 @@ func (m *appModel) reloadJobs() {
 		if m.historyMode == historyModeNormal {
 			_, label = j.Status()
 		}
-		historyRows[i] = table.Row{j.Name, j.HistoryWhen(), label}
+		historyRows[i] = table.Row{m.nameCell(j, focusHistory), j.HistoryWhen(), label}
 	}
 	m.historyTable.SetRows(historyRows)
 	m.historyTable.SetCursor(historySelected)
+
+	m.pruneSelection()
 }
 
 func jobName(jobs []Job, idx int) string {
@@ -590,17 +741,39 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.message = fmt.Sprintf("'%s' started.", job.Name)
 		return m, tea.Tick(3*time.Second, func(time.Time) tea.Msg { return reloadMsg{} })
 	case key.Matches(keyMsg, resolve("delete")):
-		job := m.currentJob()
-		if job == nil {
-			return m, nil
-		}
-		jobCopy := *job
 		archived := m.selectedSide == focusHistory && m.historyMode == historyModeArchived
-		m.deleteJob = &jobCopy
+		jobs := m.selectedJobs(m.selectedSide)
+		if len(jobs) == 0 {
+			job := m.currentJob()
+			if job == nil {
+				return m, nil
+			}
+			jobCopy := *job
+			m.deleteJobs = []Job{jobCopy}
+		} else {
+			m.deleteJobs = jobs
+		}
 		m.deleteFromArchive = archived
-		m.deleteForm = newDeleteForm(jobCopy, archived)
+		m.deleteForm = newDeleteForm(m.deleteJobs, archived, "")
 		m.mode = modeDelete
 		return m, m.deleteForm.Init()
+	case key.Matches(keyMsg, resolve("archive-all")):
+		if m.selectedSide == focusHistory && m.historyMode == historyModeArchived {
+			m.message = "These jobs are already archived."
+			return m, nil
+		}
+		return m.startBulkDelete(deleteChoiceArchive)
+	case key.Matches(keyMsg, resolve("delete-all")):
+		return m.startBulkDelete(deleteChoiceForever)
+	case key.Matches(keyMsg, resolve("select-toggle")):
+		m.toggleSelection()
+		return m, nil
+	case key.Matches(keyMsg, resolve("select-clear")):
+		if set := m.selected[m.selectedSide]; len(set) > 0 {
+			clear(set)
+			m.message = "Selection cleared."
+		}
+		return m, nil
 	case key.Matches(keyMsg, resolve("toggle-archive")):
 		if m.historyMode == historyModeNormal {
 			m.historyMode = historyModeArchived
@@ -782,7 +955,7 @@ func (m appModel) updateDelete(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "esc" {
 		m.mode = modeList
 		m.deleteForm = nil
-		m.deleteJob = nil
+		m.deleteJobs = nil
 		m.deleteFromArchive = false
 		return m, nil
 	}
@@ -794,28 +967,36 @@ func (m appModel) updateDelete(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if m.deleteForm.State == huh.StateCompleted {
 		choice := m.deleteForm.GetString("choice")
-		job := *m.deleteJob
+		jobs := m.deleteJobs
 		m.mode = modeList
 		m.deleteForm = nil
-		m.deleteJob = nil
+		m.deleteJobs = nil
 		m.deleteFromArchive = false
 
-		switch choice {
-		case deleteChoiceArchive:
-			if err := archiveJob(job); err == nil {
-				m.message = fmt.Sprintf("'%s' archived.", job.Name)
-			} else {
-				m.message = fmt.Sprintf("error archiving '%s': %v", job.Name, err)
+		for _, job := range jobs {
+			switch choice {
+			case deleteChoiceArchive:
+				if err := archiveJob(job); err == nil {
+					m.message = fmt.Sprintf("'%s' archived.", job.Name)
+				} else {
+					m.message = fmt.Sprintf("error archiving '%s': %v", job.Name, err)
+				}
+			case deleteChoiceForever:
+				if err := deleteJob(job, true); err == nil {
+					m.message = fmt.Sprintf("'%s' deleted forever.", job.Name)
+				} else {
+					m.message = fmt.Sprintf("error deleting '%s': %v", job.Name, err)
+				}
 			}
-			m.reloadJobs()
-		case deleteChoiceForever:
-			if err := deleteJob(job, true); err == nil {
-				m.message = fmt.Sprintf("'%s' deleted forever.", job.Name)
-			} else {
-				m.message = fmt.Sprintf("error deleting '%s': %v", job.Name, err)
-			}
-			m.reloadJobs()
 		}
+		if len(jobs) > 1 {
+			verb := "archived"
+			if choice == deleteChoiceForever {
+				verb = "deleted forever"
+			}
+			m.message = fmt.Sprintf("%d jobs %s.", len(jobs), verb)
+		}
+		m.reloadJobs()
 		return m, nil
 	}
 
@@ -828,7 +1009,7 @@ func (m appModel) View() string {
 		return m.renderModal(title, m.editForm.View())
 	}
 	if m.mode == modeDelete {
-		title := fmt.Sprintf("delete: %s", m.deleteJob.Name)
+		title := fmt.Sprintf("delete: %s", deleteSubject(m.deleteJobs))
 		return m.renderModal(title, m.deleteForm.View())
 	}
 	if m.mode == modeCreate {
@@ -841,27 +1022,28 @@ func (m appModel) View() string {
 	}
 	header := theme.Header(m.width).Render(headerText)
 
-	recurringView := colorizeStatusColumn(m.recurringTable.View(), m.recurringJobs, m.recurringTable.Cursor(), m.recurringStatusOffset, m.statusCellWidth)
+	recurringView := decorateTable(m.recurringTable.View(), m.recurringJobs, m.recurringTable.Cursor(), m.recurringStatusOffset, m.statusCellWidth, whenColWidth, m.selected[focusRecurring], true)
 	recurringBox := theme.Panel(m.focus == focusRecurring).Render(padLines(
-		theme.Title().Render("recurring")+"\n\n"+recurringView, m.recurringInnerWidth,
+		theme.Title().Render(m.panelTitle("recurring", focusRecurring))+"\n\n"+recurringView, m.recurringInnerWidth,
 	))
 
-	pendingView := colorizeStatusColumn(m.pendingTable.View(), m.pendingJobs, m.pendingTable.Cursor(), m.pendingStatusOffset, m.statusCellWidth)
+	pendingView := decorateTable(m.pendingTable.View(), m.pendingJobs, m.pendingTable.Cursor(), m.pendingStatusOffset, m.statusCellWidth, scheduleColWidth, m.selected[focusPending], true)
 	pendingBox := theme.Panel(m.focus == focusPending).Render(padLines(
-		theme.Title().Render("pending")+"\n\n"+pendingView, m.pendingInnerWidth,
+		theme.Title().Render(m.panelTitle("pending", focusPending))+"\n\n"+pendingView, m.pendingInnerWidth,
 	))
 
 	// Archived jobs have no meaningful Status() (their timer is long gone),
-	// so the archived view skips colorizeStatusColumn — the plain "archived"
-	// label rendered by the table itself is all there is to show.
-	historyTitle, historyView := "history", m.historyTable.View()
+	// so the archived view skips status coloring — the plain "archived"
+	// label rendered by the table itself is all there is to show. Marked
+	// rows are still highlighted though.
+	historyTitle := "history"
+	historyView := decorateTable(m.historyTable.View(), m.historyJobs, m.historyTable.Cursor(), m.historyStatusOffset, m.statusCellWidth, whenColWidth, m.selected[focusHistory], true)
 	if m.historyMode == historyModeArchived {
 		historyTitle = "archived"
-	} else {
-		historyView = colorizeStatusColumn(historyView, m.historyJobs, m.historyTable.Cursor(), m.historyStatusOffset, m.statusCellWidth)
+		historyView = decorateTable(m.historyTable.View(), m.archivedJobs, m.historyTable.Cursor(), m.historyStatusOffset, m.statusCellWidth, whenColWidth, m.selected[focusHistory], false)
 	}
 	historyBox := theme.Panel(m.focus == focusHistory).Render(padLines(
-		theme.Title().Render(historyTitle)+"\n\n"+historyView, m.historyInnerWidth,
+		theme.Title().Render(m.panelTitle(historyTitle, focusHistory))+"\n\n"+historyView, m.historyInnerWidth,
 	))
 
 	// Recurring, pending, and history sit side by side, equal width split.
@@ -876,7 +1058,7 @@ func (m appModel) View() string {
 	))
 
 	footer := tuiui.NewFooter(reg.Bindings()...).
-		Status(m.message).
+		Status(m.footerStatus()).
 		Render(m.width, theme)
 
 	view := lipgloss.JoinVertical(lipgloss.Left, header, jobsRow, detailBox, footer)
@@ -937,37 +1119,56 @@ func (m appModel) renderDetailBody() string {
 	return strings.Join(visible, "\n")
 }
 
-// colorizeStatusColumn re-colors the status column of an already-rendered
-// table view, one line at a time. Coloring the cell *value* before it goes
-// through bubbles/table's own rendering doesn't work: bubbles truncates
-// each cell with runewidth.Truncate, which isn't ANSI-aware and counts
-// escape-code bytes as visible width, mangling short colored strings well
-// before they'd actually need truncating. Post-processing the plain
-// rendered text instead sidesteps that entirely.
+// decorateTable post-processes an already-rendered table view, one line at
+// a time, matching each line back to its Job by the displayed name cell.
+// It re-colors the status column of every row (unless colorStatus is false)
+// and, for marked rows (in `selected`), paints a whole-row background +
+// bold so the "space" marks are unmistakable without relying on the cursor.
 //
-// Each line is matched back to its Job by the displayed name cell rather
-// than by line position: bubbles/table renders rows from an internal
-// viewport window (its unexported `start` + viewport `YOffset`) that isn't
-// recoverable from the public API, so positional math drifts as soon as the
-// table scrolls. Name matching is exact even for "…"-truncated names, and
-// unambiguous because job names are unique. The row at `cursor` is left
-// untouched — bubbles/table already wraps it in its own Selected style, and
-// nesting another color in there would reset-terminate that highlight
-// partway through the row.
-func colorizeStatusColumn(view string, jobs []Job, cursor int, offset, width int) string {
-	// The name column sits right before the when + status columns, so its
-	// content width is recoverable from the status offset: name + 2 padding
-	// + when + 2 padding = offset, and `when` is a fixed constant.
-	nameWidth := offset - whenColWidth - 4
+// Coloring the cell *value* before it goes through bubbles/table's own
+// rendering doesn't work: bubbles truncates each cell with
+// runewidth.Truncate, which isn't ANSI-aware and counts escape-code bytes
+// as visible width, mangling short colored strings well before they'd
+// actually need truncating. Post-processing the plain rendered text instead
+// sidesteps that entirely.
+//
+// Name matching beats line position because bubbles/table renders rows from
+// an internal viewport window (its unexported `start` + viewport `YOffset`)
+// that isn't recoverable from the public API, so positional math drifts as
+// soon as the table scrolls. Matching is exact even for "…"-truncated
+// names, and unambiguous because job names are unique. midWidth is the
+// *content* width of the middle column ("next run"/"scheduled for"/"date"),
+// which differs per panel (whenColWidth vs scheduleColWidth) and is needed
+// to recover the name column's own content width from the status offset.
+// The row at `cursor` is left untouched — bubbles/table already wraps it in
+// its own Selected style, and nesting another color in there would
+// reset-terminate that highlight partway through the row.
+func decorateTable(view string, jobs []Job, cursor int, offset, width int, midWidth int, selected map[string]bool, colorStatus bool) string {
+	// Layout: [name cell: nameW+2][mid cell: midWidth+2][status cell:
+	// width]. The status offset is therefore nameW + midWidth + 4, which
+	// recovers nameW (each cell carries one space of padding per side).
+	nameWidth := offset - midWidth - 4
 
 	type match struct {
 		job  Job
 		when string
 	}
-	byName := make(map[string][]match, len(jobs))
+	byName := make(map[string][]match, len(jobs)*2)
 	for _, j := range jobs {
 		displayed := runewidth.Truncate(j.Name, nameWidth, "…")
 		byName[displayed] = append(byName[displayed], match{j, j.HistoryWhen()})
+		// Marked rows prefix their name cell with the "*" marker, which
+		// counts against the column width — so they display one rune less
+		// of the name. Index that truncated shape too, or a long marked
+		// name would fail to match and lose its highlight.
+		if short := runewidth.Truncate(j.Name, nameWidth-1, "…"); short != displayed {
+			byName[short] = append(byName[short], match{j, j.HistoryWhen()})
+		}
+	}
+
+	markSGR := sgrBg(string(colSurface1))
+	if markSGR != "" {
+		markSGR = "\x1b[1m" + markSGR // bold + background for marked rows
 	}
 
 	lines := strings.Split(view, "\n")
@@ -975,17 +1176,20 @@ func colorizeStatusColumn(view string, jobs []Job, cursor int, offset, width int
 		if i == 0 { // line 0 is the table's own header row
 			continue
 		}
-		line := []rune(lines[i])
-		if offset+width > len(line) {
-			continue
-		}
 		// Strip ANSI up front so fixed-width slices line up even on the
 		// selected row, which bubbles wraps in its Selected style.
 		clean := []rune(ansi.Strip(lines[i]))
-		if len(clean) < nameWidth+2 {
+		if len(clean) < nameWidth+2 || offset >= len(clean) {
 			continue
 		}
-		displayed := strings.TrimRight(string(clean[:nameWidth+2]), " ")
+		// The status cell is the last column; a narrow panel clips its
+		// right padding (bubbles caps the line at the table width), so
+		// clamp the end instead of bailing on the full-cell check.
+		end := min(offset+width, len(clean))
+		// TrimSpace drops both sides of the cell, including the leading
+		// padding space bubbles' Cell style injects before content.
+		displayed := strings.TrimSpace(string(clean[:nameWidth+2]))
+		displayed = strings.TrimPrefix(displayed, "*")
 		cands := byName[displayed]
 		if len(cands) == 0 {
 			continue
@@ -994,8 +1198,8 @@ func colorizeStatusColumn(view string, jobs []Job, cursor int, offset, width int
 		if len(cands) == 1 {
 			job = &cands[0].job
 		} else {
-			// Truncated-name collision — disambiguate by the date column.
-			when := strings.TrimRight(string(clean[nameWidth+2:nameWidth+2+whenColWidth+2]), " ")
+			// Truncated-name collision — disambiguate by the middle column.
+			when := strings.TrimSpace(string(clean[nameWidth+2 : nameWidth+2+midWidth+2]))
 			for k := range cands {
 				if cands[k].when == when {
 					job = &cands[k].job
@@ -1009,14 +1213,78 @@ func colorizeStatusColumn(view string, jobs []Job, cursor int, offset, width int
 		if job.Name == jobName(jobs, cursor) {
 			continue
 		}
-		cell := string(line[offset : offset+width])
+
+		kind, _ := job.Status()
+		if selected[job.Name] && markSGR != "" {
+			lines[i] = renderMarkedRow(clean, offset, end, kind, colorStatus, markSGR)
+			continue
+		}
+		if !colorStatus {
+			continue
+		}
+		cell := string(clean[offset:end])
 		trimmed := strings.TrimRight(cell, " ")
 		trailing := cell[len(trimmed):]
-		kind, _ := job.Status()
 		colored := statusStyle(kind).Render(trimmed)
-		lines[i] = string(line[:offset]) + colored + trailing + string(line[offset+width:])
+		lines[i] = string(clean[:offset]) + colored + trailing + string(clean[end:])
 	}
 	return strings.Join(lines, "\n")
+}
+
+// renderMarkedRow rebuilds one rendered table line as a single SGR
+// sequence: bold + the highlight background across the whole row, with the
+// status cell (when colorStatus) switching to its status foreground on top
+// of that same background. clean is the ANSI-stripped line; offset/end
+// delimit the status column (end may be clamped by a narrow panel).
+func renderMarkedRow(clean []rune, offset, end int, kind jobStatusKind, colorStatus bool, markSGR string) string {
+	b := strings.Builder{}
+	b.WriteString(markSGR)
+	b.WriteString(string(clean[:offset])) // name + middle columns
+	if colorStatus {
+		cell := string(clean[offset:end])
+		trimmed := strings.TrimRight(cell, " ")
+		trailing := cell[len(trimmed):]
+		if c, ok := statusStyle(kind).GetForeground().(lipgloss.Color); ok {
+			if fg := sgrFg(string(c)); fg != "" {
+				b.WriteString(fg)
+			}
+		}
+		b.WriteString(trimmed)
+		b.WriteString(trailing)
+	} else {
+		b.WriteString(string(clean[offset:]))
+	}
+	b.WriteString("\x1b[0m")
+	return b.String()
+}
+
+// sgrBg/sgrFg turn a "#rrggbb" color into the 24-bit SGR sequence that
+// sets background/foreground, returning "" when the color isn't hex (so
+// callers can degrade gracefully instead of emitting garbage).
+func sgrBg(color string) string {
+	if r, g, bl, ok := hexRGB(color); ok {
+		return fmt.Sprintf("\x1b[48;2;%d;%d;%dm", r, g, bl)
+	}
+	return ""
+}
+
+func sgrFg(color string) string {
+	if r, g, bl, ok := hexRGB(color); ok {
+		return fmt.Sprintf("\x1b[38;2;%d;%d;%dm", r, g, bl)
+	}
+	return ""
+}
+
+func hexRGB(color string) (r, g, b int, ok bool) {
+	color = strings.TrimPrefix(strings.TrimSpace(color), "#")
+	if len(color) != 6 {
+		return 0, 0, 0, false
+	}
+	v, err := strconv.ParseUint(color, 16, 32)
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	return int(v >> 16), int(v>>8) & 0xff, int(v & 0xff), true
 }
 
 func (m appModel) renderModal(title, body string) string {
