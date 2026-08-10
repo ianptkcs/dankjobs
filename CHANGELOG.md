@@ -5,13 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.0] - 2026-08-09
+## [0.3.1] - 2026-08-09
 
 ### Added
 
 - DMS plugin: a settings panel (Max name width + Refresh interval). Max
   name width caps how wide a job name can get in the bar pill before it's
   elided, so long names no longer stretch the pill.
+
+## [0.3.0] - 2026-08-09
+
+### Added
 
 - Multi-select: `space` marks/unmarks the job under the cursor, with the
   marked count shown in the panel title. A marked row is highlighted
@@ -103,6 +107,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and status-bar widgets.
 - DankMaterialShell accent-color integration, with `DJOBS_ACCENT` fallback.
 
+[0.3.1]: https://github.com/ianptkcs/djobs/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/ianptkcs/djobs/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/ianptkcs/djobs/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/ianptkcs/djobs/compare/v0.2.0-beta.2...v0.2.1
