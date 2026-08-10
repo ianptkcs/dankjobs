@@ -21,10 +21,12 @@ func init() {
 		tuiui.Action{ID: "settings", Help: "rebind keys", Keys: []string{","}},
 		tuiui.Action{ID: "refresh", Help: "refresh", Keys: []string{"r"}},
 		tuiui.Action{ID: "new", Help: "new", Keys: []string{"n"}},
-		tuiui.Action{ID: "nav-left", Help: "prev panel", Keys: []string{"ctrl+h"}},
-		tuiui.Action{ID: "nav-right", Help: "next panel", Keys: []string{"ctrl+l"}},
-		tuiui.Action{ID: "nav-down", Help: "details", Keys: []string{"ctrl+j"}},
-		tuiui.Action{ID: "nav-up", Help: "back to panels", Keys: []string{"ctrl+k"}},
+		// A single "nav" action keeps the footer/help hints to one line
+		// ("ctrl+h/j/k/l move focus", like herdr's "h/j/k/l move focus")
+		// instead of four. Direction is resolved by key position in
+		// model.go: [0]=left, [1]=right, [2]=down, [3]=up, so rebinding
+		// nav still works as long as the four keys keep their order.
+		tuiui.Action{ID: "nav", Help: "move focus", Keys: []string{"ctrl+h", "ctrl+l", "ctrl+j", "ctrl+k"}, Label: "ctrl+h/j/k/l"},
 		tuiui.Action{ID: "edit", Help: "reschedule", Keys: []string{"e"}},
 		tuiui.Action{ID: "toggle-pause", Help: "pause/resume", Keys: []string{"t"}},
 		tuiui.Action{ID: "run-now", Help: "run now", Keys: []string{"x"}},

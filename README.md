@@ -192,8 +192,7 @@ Drop the resulting binary on your `PATH`.
 | `u`                 | Unarchive the selected job (while in that view) |
 | `r`                 | Refresh the list                                |
 | `q`                 | Quit                                             |
-| `ctrl+h`/`ctrl+l`   | Move focus one panel left/right (recurring/pending/history) |
-| `ctrl+j`/`ctrl+k`   | Move focus down into details, and back up       |
+| `ctrl+h`/`j`/`k`/`l` | Move focus between panels/details (single "nav" action) |
 | `j`/`k`, `↓`/`↑`     | Move within the focused table, or scroll details  |
 | `g`/`G`             | Jump to first/last job                           |
 | `ctrl+u`/`ctrl+d`   | Half-page up/down                                |

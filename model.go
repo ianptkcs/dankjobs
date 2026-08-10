@@ -193,6 +193,10 @@ func newModel() appModel {
 		selected:       map[panelFocus]map[string]bool{},
 		width:          100,
 		height:         30,
+		// Open on the pending panel: that's where a scheduled one-shot job
+		// the user most likely wants to act on lives.
+		focus:        focusPending,
+		selectedSide: focusPending,
 		helpModal: tuiui.NewHelpModal(tuiui.HelpSection{
 			Title:      "Atalhos",
 			BindingsFn: reg.Bindings,
@@ -671,30 +675,35 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.createForm = newCreateForm()
 		m.mode = modeCreate
 		return m, m.createForm.Init()
-	case key.Matches(keyMsg, resolve("nav-left")):
-		switch m.selectedSide {
-		case focusPending:
-			m.focus, m.selectedSide = focusRecurring, focusRecurring
-		case focusHistory:
-			m.focus, m.selectedSide = focusPending, focusPending
-		}
-		return m, nil
-	case key.Matches(keyMsg, resolve("nav-right")):
-		switch m.selectedSide {
-		case focusRecurring:
-			m.focus, m.selectedSide = focusPending, focusPending
-		case focusPending:
-			m.focus, m.selectedSide = focusHistory, focusHistory
-		}
-		return m, nil
-	case key.Matches(keyMsg, resolve("nav-down")):
-		if m.focus != focusDetail {
-			m.focus = focusDetail
-		}
-		return m, nil
-	case key.Matches(keyMsg, resolve("nav-up")):
-		if m.focus == focusDetail {
-			m.focus = m.selectedSide
+	case key.Matches(keyMsg, resolve("nav")):
+		// "nav" is a single action holding all four pane-navigation keys in
+		// a fixed order ([0]=left, [1]=right, [2]=down, [3]=up); the pressed
+		// key's position decides the direction, so rebinding nav keeps
+		// working as long as the keys keep their order.
+		navKeys := resolve("nav").Keys()
+		switch {
+		case len(navKeys) > 0 && keyMsg.String() == navKeys[0]:
+			switch m.selectedSide {
+			case focusPending:
+				m.focus, m.selectedSide = focusRecurring, focusRecurring
+			case focusHistory:
+				m.focus, m.selectedSide = focusPending, focusPending
+			}
+		case len(navKeys) > 1 && keyMsg.String() == navKeys[1]:
+			switch m.selectedSide {
+			case focusRecurring:
+				m.focus, m.selectedSide = focusPending, focusPending
+			case focusPending:
+				m.focus, m.selectedSide = focusHistory, focusHistory
+			}
+		case len(navKeys) > 2 && keyMsg.String() == navKeys[2]:
+			if m.focus != focusDetail {
+				m.focus = focusDetail
+			}
+		case len(navKeys) > 3 && keyMsg.String() == navKeys[3]:
+			if m.focus == focusDetail {
+				m.focus = m.selectedSide
+			}
 		}
 		return m, nil
 	case key.Matches(keyMsg, resolve("edit")):
