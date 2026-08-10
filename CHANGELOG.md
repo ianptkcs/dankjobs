@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- DMS plugin: a settings panel (Max name width + Refresh interval). Max
+  name width caps how wide a job name can get in the bar pill before it's
+  elided, so long names no longer stretch the pill.
+
 - Multi-select: `space` marks/unmarks the job under the cursor, with the
   marked count shown in the panel title. A marked row is highlighted
   (bold, tinted background, `*` before the name). `d` then archives or

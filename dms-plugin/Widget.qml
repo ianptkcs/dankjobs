@@ -17,6 +17,12 @@ PluginComponent {
 
     property int refreshInterval: (pluginData.refreshInterval || 60) * 1000
 
+    // Maximum width, in pixels, for the job name in the bar pill. 0 (or
+    // unset) means no cap — the name shows in full and the pill grows to
+    // fit it. Anything else elides the name with "…" at that width, keeping
+    // the schedule visible next to it.
+    property int pillMaxWidth: pluginData.maxWidth || 0
+
     property bool hasNext: false
     property string nextName: ""
     property string nextSchedule: ""
@@ -89,10 +95,21 @@ PluginComponent {
             }
 
             StyledText {
-                text: root.hasNext ? (root.nextName + " · " + root.nextSchedule) : root.tr("sem jobs pendentes")
+                text: root.hasNext ? root.nextName : root.tr("sem jobs pendentes")
                 font.pixelSize: Theme.fontSizeSmall
                 color: Theme.surfaceText
                 elide: Text.ElideRight
+                // Cap just the name at pillMaxWidth, so a long job name
+                // can't stretch the bar pill — the schedule stays visible.
+                width: root.pillMaxWidth > 0 ? Math.min(implicitWidth, root.pillMaxWidth) : implicitWidth
+                anchors.verticalCenter: parent.verticalCenter
+            }
+
+            StyledText {
+                visible: root.hasNext
+                text: " · " + root.nextSchedule
+                font.pixelSize: Theme.fontSizeSmall
+                color: Theme.surfaceText
                 anchors.verticalCenter: parent.verticalCenter
             }
         }

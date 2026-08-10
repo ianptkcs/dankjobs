@@ -151,6 +151,12 @@ job and lists everything still scheduled. Symlink it into DMS's plugins dir
 ln -s "$(pwd)/dms-plugin" ~/.config/DankMaterialShell/plugins/djobs
 ```
 
+The widget reads two settings (DMS Settings → Plugins → djobs): **Max name
+width** caps how wide a job name can get in the bar pill before it's elided
+with "…" (`0` = no limit — handy for long names like
+`express-register-webapp-pr`), and **Refresh interval** controls how often it
+re-queries djobs.
+
 ![dankbar widget](plugin-screenshot.png)
 
 ## Install
