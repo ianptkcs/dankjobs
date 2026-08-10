@@ -45,7 +45,7 @@ PluginComponent {
     function refresh() {
         root.loading = true;
 
-        Proc.runCommand("djobs.next", ["djobs", "ipc", "jobs.next", "--json"], (stdout, exitCode) => {
+        Proc.runCommand("tjobs.next", ["tjobs", "ipc", "jobs.next", "--json"], (stdout, exitCode) => {
             if (exitCode !== 0) {
                 root.hasNext = false;
                 return;
@@ -60,7 +60,7 @@ PluginComponent {
             }
         }, 3000);
 
-        Proc.runCommand("djobs.list", ["djobs", "ipc", "jobs.list", "pending=true", "--json"], (stdout, exitCode) => {
+        Proc.runCommand("tjobs.list", ["tjobs", "ipc", "jobs.list", "pending=true", "--json"], (stdout, exitCode) => {
             root.loading = false;
             if (exitCode !== 0) {
                 root.pendingJobs = [];

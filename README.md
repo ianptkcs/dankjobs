@@ -1,8 +1,8 @@
 <div align="center">
 
-# Dank Jobs
+# Tabela Jobs
 
-[![Go Version](https://img.shields.io/github/go-mod/go-version/ianptkcs/dankjobs?style=flat-square&logo=go&logoColor=white&color=00ADD8)](go.mod)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/ianptkcs/tabelajobs?style=flat-square&logo=go&logoColor=white&color=00ADD8)](go.mod)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Built with Bubble Tea](https://img.shields.io/badge/built%20with-Bubble%20Tea-ff69b4?style=flat-square)](https://github.com/charmbracelet/bubbletea)
 [![Powered by tabelatuiui](https://img.shields.io/badge/theme-tabelatuiui-d6b4f7?style=flat-square)](https://github.com/TabelaDev/tabelatuiui)
@@ -37,8 +37,8 @@ library for my Bubble Tea TUIs.
 ![screenshot](screenshot.png)
 
 The header bar reports the recurring/pending/history counts and the jobs
-directory currently in effect (`~/jobs` by default, or `DJOBS_JOBS_DIR` if
-set) — a quick sanity check for which directory djobs is actually reading
+directory currently in effect (`~/jobs` by default, or `TJOBS_JOBS_DIR` if
+set) — a quick sanity check for which directory tjobs is actually reading
 from.
 
 Jobs are split across three equal-width side-by-side panels —
@@ -72,7 +72,7 @@ same confirmation modal, so a single Enter confirms. `esc` clears the
 marks. Marks are scoped per panel, so they never leak across
 recurring/pending/history.
 
-**details** shows everything djobs knows about the selected job: its
+**details** shows everything tjobs knows about the selected job: its
 directory, the timer's schedule/status and next elapse time (recurring and
 pending jobs only), the `<name>*body*.txt` notes and the job script's
 contents (both read straight from disk), and the last 25 lines of
@@ -91,7 +91,7 @@ Scheduling is a pair of **systemd user units**, `~/.config/systemd/user/<name>.t
 and `<name>.service`, using `OnCalendar=` + `Persistent=true` — so a run missed
 because the machine was asleep or off fires as soon as it's back, unlike plain cron.
 
-djobs discovers a job whenever a `~/jobs/<name>/` directory and a `<name>.timer`
+tjobs discovers a job whenever a `~/jobs/<name>/` directory and a `<name>.timer`
 unit share the same name — no extra tagging required. A job with no matching timer
 (already run, or never scheduled) still shows up if it has a log or script, just
 without a schedule.
@@ -107,8 +107,8 @@ without a schedule.
   <name>.service
 ```
 
-`DJOBS_JOBS_DIR` / `DJOBS_SYSTEMD_DIR` override the two directories
-above, if you want to point djobs somewhere other than `~/jobs` and
+`TJOBS_JOBS_DIR` / `TJOBS_SYSTEMD_DIR` override the two directories
+above, if you want to point tjobs somewhere other than `~/jobs` and
 `~/.config/systemd/user`.
 
 A job repeats instead of running once by giving it a recurring
@@ -130,14 +130,14 @@ Panel/header titles and the focused-panel border use whatever accent color
 is currently configured in an installed
 [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) (read
 from `~/.config/DankMaterialShell/settings.json` and the Catppuccin
-`theme.json` it references — `DJOBS_DMS_SETTINGS` overrides that path).
+`theme.json` it references — `TJOBS_DMS_SETTINGS` overrides that path).
 Without DMS, or with a non-Catppuccin DMS theme, it falls back to a
-Catppuccin Mocha accent picked via `DJOBS_ACCENT` (any of `rosewater`,
+Catppuccin Mocha accent picked via `TJOBS_ACCENT` (any of `rosewater`,
 `flamingo`, `pink`, `mauve`, `red`, `maroon`, `peach`, `yellow`, `green`,
 `teal`, `sky`, `sapphire`, `blue`, `lavender` — defaults to `mauve`).
 
 See [instructions.md](instructions.md) for the full convention — useful if
-you (or an AI agent) want to write a job by hand instead of using djobs'
+you (or an AI agent) want to write a job by hand instead of using tjobs'
 own `n` create flow below.
 
 ## DMS widget
@@ -148,14 +148,14 @@ job and lists everything still scheduled. Symlink it into DMS's plugins dir
 (restart DMS after changing the link):
 
 ```bash
-ln -s "$(pwd)/dms-plugin" ~/.config/DankMaterialShell/plugins/djobs
+ln -s "$(pwd)/dms-plugin" ~/.config/DankMaterialShell/plugins/tjobs
 ```
 
-The widget reads two settings (DMS Settings → Plugins → djobs): **Max name
+The widget reads two settings (DMS Settings → Plugins → tjobs): **Max name
 width** caps how wide a job name can get in the bar pill before it's elided
 with "…" (`0` = no limit — handy for long names like
 `express-register-webapp-pr`), and **Refresh interval** controls how often it
-re-queries djobs.
+re-queries tjobs.
 
 ![dankbar widget](plugin-screenshot.png)
 
@@ -164,9 +164,9 @@ re-queries djobs.
 Requires Go 1.26+.
 
 ```bash
-git clone https://github.com/ianptkcs/dankjobs.git
-cd dankjobs
-go build -o djobs .
+git clone https://github.com/ianptkcs/tabelajobs.git
+cd tabelajobs
+go build -o tjobs .
 ```
 
 Drop the resulting binary on your `PATH`.
@@ -174,7 +174,7 @@ Drop the resulting binary on your `PATH`.
 ## Usage
 
 ```bash
-./djobs
+./tjobs
 ```
 
 | Key                 | Action                                          |
@@ -205,15 +205,15 @@ no-ops when there's no pane in that direction, same as vim-tmux-navigator
 
 ## IPC
 
-For scripting or other tools (e.g. a status-bar widget), `djobs` also
+For scripting or other tools (e.g. a status-bar widget), `tjobs` also
 exposes a non-interactive `ipc` subcommand, in the same spirit as `dcal`'s
 own `dcal ipc <method> --json`:
 
 ```bash
-djobs ipc jobs.list --json                  # every discovered job
-djobs ipc jobs.list pending=true --json     # pending + recurring (still scheduled)
-djobs ipc jobs.list pending=false --json    # only history
-djobs ipc jobs.next --json                  # soonest active *one-shot* pending job, or null
+tjobs ipc jobs.list --json                  # every discovered job
+tjobs ipc jobs.list pending=true --json     # pending + recurring (still scheduled)
+tjobs ipc jobs.list pending=false --json    # only history
+tjobs ipc jobs.next --json                  # soonest active *one-shot* pending job, or null
 ```
 
 Each job's JSON also carries a `recurring` field, so a consumer can tell a

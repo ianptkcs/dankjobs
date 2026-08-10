@@ -5,11 +5,11 @@ import qs.Widgets
 
 PluginSettings {
     id: root
-    pluginId: "djobs"
+    pluginId: "tjobs"
 
     StyledText {
         width: parent.width
-        text: "Dank Jobs"
+        text: "Tabela Jobs"
         font.pixelSize: Theme.fontSizeLarge
         font.weight: Font.Bold
         color: Theme.surfaceText
@@ -29,7 +29,7 @@ PluginSettings {
     SliderSetting {
         settingKey: "refreshInterval"
         label: "Refresh interval"
-        description: "How often to re-query djobs."
+        description: "How often to re-query tjobs."
         defaultValue: 60
         minimum: 10
         maximum: 3600

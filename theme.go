@@ -6,10 +6,10 @@ import (
 
 // theme mirrors the installed DankMaterialShell's own configured accent
 // (falling back to a manually chosen Catppuccin accent when DMS isn't
-// installed/configured) — same lookup djobs, tabelaradar and dcal use, kept
-// in sync so every tool's chrome matches. DJOB_DMS_SETTINGS/DJOB_ACCENT env
+// installed/configured) — same lookup tjobs, tabelaradar and dcal use, kept
+// in sync so every tool's chrome matches. TJOBS_DMS_SETTINGS/TJOBS_ACCENT env
 // vars override the defaults; see tabelatuiui.NewThemeFromEnv.
-var theme = tuiui.NewThemeFromEnv("DJOB")
+var theme = tuiui.NewThemeFromEnv("TJOBS")
 
 var (
 	colBase     = theme.Base

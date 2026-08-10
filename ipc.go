@@ -42,13 +42,13 @@ func (j Job) toIPC() jobJSON {
 	return out
 }
 
-// runIPC implements `djobs ipc <method> [key=value...] --json`, a
+// runIPC implements `tjobs ipc <method> [key=value...] --json`, a
 // scriptable data source mirroring dcal's `dcal ipc <method> --json`
 // convention. Returns the process exit code.
 func runIPC(args []string) int {
 	parsed, err := tuiui.ParseIPCArgs(args)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "uso: djobs ipc <método> [key=value...] --json")
+		fmt.Fprintln(os.Stderr, "uso: tjobs ipc <método> [key=value...] --json")
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

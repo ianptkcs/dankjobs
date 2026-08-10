@@ -1,5 +1,5 @@
 name: Bug report
-description: Report incorrect behavior in djobs
+description: Report incorrect behavior in tjobs
 labels: ['bug']
 body:
   - type: textarea
@@ -14,7 +14,7 @@ body:
     attributes:
       label: Steps to reproduce
       placeholder: |
-        1. Run djobs with '...'
+        1. Run tjobs with '...'
         2. Press '...'
         3. See the error
     validations:
@@ -23,7 +23,7 @@ body:
     id: environment
     attributes:
       label: Environment
-      placeholder: OS, terminal emulator, djobs version/commit, etc.
+      placeholder: OS, terminal emulator, tjobs version/commit, etc.
     validations:
       required: false
   - type: textarea

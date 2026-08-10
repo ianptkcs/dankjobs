@@ -1,8 +1,8 @@
-# Contributing to djobs
+# Contributing to tjobs
 
 Thanks for your interest in contributing. Before opening a code PR, skim
 `README.md` and `instructions.md` to understand the job convention (the
-`~/jobs/<name>/` layout and the systemd user timer pattern) that djobs
+`~/jobs/<name>/` layout and the systemd user timer pattern) that tjobs
 discovers and displays.
 
 ## Reporting bugs / suggesting features
@@ -19,7 +19,7 @@ Open an [issue](../../issues/new/choose) using the appropriate template.
 
 ## Versioning and changelog
 
-djobs follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`).
+tjobs follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`).
 While the project is at `0.x`, breaking changes may still land in a minor
 bump; starting at `1.0.0`, only a major bump introduces breaking changes.
 

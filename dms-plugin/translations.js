@@ -1,7 +1,7 @@
 .pragma library
 
-// Keys are the raw English strings the djobs IPC returns or the widget
-// hardcodes; pt is the base language, matching Dank Jobs' own convention.
+// Keys are the raw English strings the tjobs IPC returns or the widget
+// hardcodes; pt is the base language, matching Tabela Jobs' own convention.
 // tr() falls back to the key itself for any language with no entry.
 var strings = {
     "próximo job": { pt: "próximo job", en: "next job", es: "próximo trabajo", fr: "prochain job", de: "nächster Job", it: "prossimo job" },

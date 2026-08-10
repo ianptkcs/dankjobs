@@ -1,17 +1,17 @@
-# How to create a job for djobs
+# How to create a job for tjobs
 
 This document exists so an AI (or a person) can create a job compatible
-with djobs by hand, without opening the TUI — for example inside an agent
+with tjobs by hand, without opening the TUI — for example inside an agent
 that needs to schedule a terminal task for later. If you have the TUI at
 hand, it's simpler to just press `n` inside it (see the end of this
 document); what follows is the format it expects to find on disk.
 
-## What djobs sees
+## What tjobs sees
 
-djobs scans a jobs directory (`~/jobs` by default, configurable via
-`DJOBS_JOBS_DIR`) looking for subdirectories, and matches each one by name
+tjobs scans a jobs directory (`~/jobs` by default, configurable via
+`TJOBS_JOBS_DIR`) looking for subdirectories, and matches each one by name
 with an optional pair of `--user` systemd units in a second directory
-(`~/.config/systemd/user` by default, configurable via `DJOBS_SYSTEMD_DIR`).
+(`~/.config/systemd/user` by default, configurable via `TJOBS_SYSTEMD_DIR`).
 There's no separate metadata file — all state is inferred from the
 filesystem + systemd.
 
@@ -39,7 +39,7 @@ While the job is still scheduled, the pair of units also exists at
   my-task.service
 ```
 
-## The five states djobs infers
+## The five states tjobs infers
 
 - **active** — timer exists, unit enabled.
 - **paused** — timer exists, unit disabled (but the service never got to
@@ -54,7 +54,7 @@ While the job is still scheduled, the pair of units also exists at
 responsible for removing its own systemd units when it finishes
 successfully. If it doesn't do this self-cleanup, the job stays in
 "pending" forever even after it already ran — there's no other way for
-djobs to know it finished well. A recurring job (see below) is different:
+tjobs to know it finished well. A recurring job (see below) is different:
 its timer is meant to keep existing, so its script does *not* self-remove —
 it lives in its own "recurring" panel instead of pending/history for as
 long as the timer exists, regardless of whether the last run succeeded,
@@ -79,7 +79,7 @@ systemctl --user daemon-reload
 `set -euo pipefail` matters beyond the usual safety net: it's what makes
 telling "failed" apart from "removed" possible. A script that dies partway
 through never reaches the self-cleanup line, so it leaves the units behind
-exactly like a merely-paused job would — and djobs uses the service's
+exactly like a merely-paused job would — and tjobs uses the service's
 `ActiveState` to tell the two cases apart.
 
 ## The two systemd units
@@ -166,7 +166,7 @@ systemctl --user daemon-reload
 systemctl --user enable --now my-task.timer
 ```
 
-djobs tells a custom-cycle job apart from a genuine one-shot (whose
+tjobs tells a custom-cycle job apart from a genuine one-shot (whose
 `OnCalendar=` also looks like a plain absolute timestamp) purely by the
 presence of the `.recur` file — there's no other marker.
 
@@ -181,7 +181,7 @@ subdirectory of the jobs dir:
   my-task.log
 ```
 
-djobs already skips dot-prefixed directories when scanning `~/jobs`, so an
+tjobs already skips dot-prefixed directories when scanning `~/jobs`, so an
 archived job is invisible to the normal pending/recurring/history panels
 for free. If the job still had a timer, disable and remove its unit files
 first (`systemctl --user disable --now my-task.timer`, then remove the
@@ -189,7 +189,7 @@ first (`systemctl --user disable --now my-task.timer`, then remove the
 keep firing. To bring one back, just move the directory back out of
 `.archive`; its timer is not restored automatically.
 
-## Or just use djobs
+## Or just use tjobs
 
 If the TUI is available, press `n` — it asks for the name, a recurrence
 type (One-shot / Daily / Weekly / Monthly / Custom cycle) and its

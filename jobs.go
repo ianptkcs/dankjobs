@@ -15,8 +15,8 @@ import (
 )
 
 var (
-	jobsDir        = tuiui.EnvOr("DJOBS_JOBS_DIR", filepath.Join(tuiui.HomeDir(), "jobs"))
-	systemdUserDir = tuiui.EnvOr("DJOBS_SYSTEMD_DIR", filepath.Join(tuiui.HomeDir(), ".config", "systemd", "user"))
+	jobsDir        = tuiui.EnvOr("TJOBS_JOBS_DIR", filepath.Join(tuiui.HomeDir(), "jobs"))
+	systemdUserDir = tuiui.EnvOr("TJOBS_SYSTEMD_DIR", filepath.Join(tuiui.HomeDir(), ".config", "systemd", "user"))
 )
 
 var onCalendarRe = regexp.MustCompile(`(?m)^OnCalendar=(.+)$`)

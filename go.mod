@@ -1,4 +1,4 @@
-module github.com/ianptkcs/djobs
+module github.com/ianptkcs/tjobs
 
 go 1.26.1
 

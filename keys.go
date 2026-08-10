@@ -7,12 +7,12 @@ import (
 	"github.com/ianptkcs/tabelatuiui"
 )
 
-// reg is djobs' single source of truth for keybindings: defaults registered
-// below, overrides persisted to ~/.config/djobs/keybindings.json (loaded in
+// reg is tjobs' single source of truth for keybindings: defaults registered
+// below, overrides persisted to ~/.config/tjobs/keybindings.json (loaded in
 // newModel via reg.Load()). Resolve() returns the effective binding, so the
 // key dispatch, the footer (reg.Bindings()) and the help modal all agree —
 // and a user rebind via the settings modal applies to all three at once.
-var reg = tuiui.NewKeyRegistry(filepath.Join(tuiui.ConfigDir(), "djobs", "keybindings.json"))
+var reg = tuiui.NewKeyRegistry(filepath.Join(tuiui.ConfigDir(), "tjobs", "keybindings.json"))
 
 func init() {
 	reg.RegisterMany(
