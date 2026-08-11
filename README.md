@@ -224,6 +224,32 @@ ambient repeating schedule". Output otherwise reuses the same
 status/schedule logic as the TUI (`jobs.go`'s `Job` methods), so it never
 drifts from what's shown on screen.
 
+## Configuration
+
+Optional, in `~/.config/tjobs/config.toml`. Without the file tjobs runs on the
+defaults below; with it, only the keys present are overridden — no need to
+copy the whole file to change one line. `f5` reloads it (and
+`keybindings.json`) without restarting.
+
+```toml
+[layout]
+schedule_col_width = 13  # content width, before the table's own padding
+status_col_width   = 8
+jobs_row_percent   = 45  # share of body height for the three side panels
+max_visible_rows   = 8   # ceiling per side panel, however tall the terminal
+min_panel_width    = 20
+
+[timing]
+run_now_reload_delay = "3s"  # wait after "run now" before re-scanning
+```
+
+The two column widths can only be widened: the status-cell decorator derives
+its offsets from them, so a value narrower than its own header text would
+paint the wrong columns. Anything smaller is floored back to the default.
+
+`TJOBS_JOBS_DIR` and `TJOBS_SYSTEMD_DIR` stay environment variables rather
+than config keys — they point at system locations, not user preferences.
+
 ## Development
 
 ```bash

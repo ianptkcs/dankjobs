@@ -26,7 +26,7 @@ func TestLayoutRowCap(t *testing.T) {
 
 	// setTableVisibleRows passes rows+1 to SetHeight to compensate for the
 	// table's own header row, so Height() is expected to be maxVisibleRows+1.
-	if got, want := m.pendingTable.Height(), maxVisibleRows+1; got > want {
+	if got, want := m.pendingTable.Height(), maxVisibleRows()+1; got > want {
 		t.Fatalf("pendingTable.Height() = %d, want <= %d even with 50 jobs on a tall terminal", got, want)
 	}
 }

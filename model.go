@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -60,11 +61,14 @@ const (
 // Column widths (content width, before bubbles/table's default Padding(0,1)
 // adds 2 on each side). "name" flexes to fill whatever's left of the panel.
 const (
-	scheduleColWidth = 13 // "scheduled for" header, pending panel
-	statusColWidth   = 8  // "removed" is the longest status label
-	whenColWidth     = 11 // "27/07 14:32"
-	minNameColWidth  = 12
+	whenColWidth    = 11 // "27/07 14:32"
+	minNameColWidth = 12
 )
+
+// The schedule/status column widths come from config.toml ([layout]);
+// normalize floors them at the width of their own header text.
+func scheduleColWidth() int { return settings.Layout.ScheduleColWidth }
+func statusColWidth() int   { return settings.Layout.StatusColWidth }
 
 // Vertical overhead around each panel's flexible content, in lines: 2
 // border + 1 title + 1 blank line, plus the table's own header row. Layout
@@ -79,21 +83,20 @@ const (
 	detailBoxOverhead = 2 + 1 + 1
 	minVisibleRows    = 2
 	minDetailLines    = 3
-	// Share of body height given to the recurring/pending/history row (all
-	// three panels sit side by side in that row, same height).
-	jobsRowPercent = 45
-	// Hard ceiling on visible rows per side panel, regardless of terminal
-	// height — keeps the dashboard compact instead of growing to fill a
-	// tall terminal. Whichever of this and the dynamic jobsRowPercent split
-	// is smaller wins (see layout()).
-	maxVisibleRows = 8
 	// recurring:pending:history WIDTH ratio, side by side in that row.
 	recurringWidthShare = 1
 	pendingWidthShare   = 1
 	historyWidthShare   = 1
 	panelGap            = 1
-	minPanelInnerWidth  = 20
 )
+
+// From config.toml ([layout]): the share of body height given to the
+// recurring/pending/history row, the hard ceiling on visible rows per side
+// panel (whichever of it and the dynamic split is smaller wins, see layout())
+// and the floor on panel width.
+func jobsRowPercent() int     { return settings.Layout.JobsRowPercent }
+func maxVisibleRows() int     { return settings.Layout.MaxVisibleRows }
+func minPanelInnerWidth() int { return settings.Layout.MinPanelWidth }
 
 type appModel struct {
 	recurringJobs []Job
@@ -508,7 +511,7 @@ func (m *appModel) layout() {
 
 	totalShare := recurringWidthShare + pendingWidthShare + historyWidthShare
 	totalRowWidth := m.width - 2*panelGap
-	if minRowWidth := 3 * (minPanelInnerWidth + 4); totalRowWidth < minRowWidth {
+	if minRowWidth := 3 * (minPanelInnerWidth() + 4); totalRowWidth < minRowWidth {
 		totalRowWidth = minRowWidth
 	}
 	recurringBoxWidth := totalRowWidth * recurringWidthShare / totalShare
@@ -516,54 +519,54 @@ func (m *appModel) layout() {
 	historyBoxWidth := totalRowWidth - recurringBoxWidth - pendingBoxWidth
 
 	m.recurringInnerWidth = recurringBoxWidth - 4
-	if m.recurringInnerWidth < minPanelInnerWidth {
-		m.recurringInnerWidth = minPanelInnerWidth
+	if m.recurringInnerWidth < minPanelInnerWidth() {
+		m.recurringInnerWidth = minPanelInnerWidth()
 	}
 	m.pendingInnerWidth = pendingBoxWidth - 4
-	if m.pendingInnerWidth < minPanelInnerWidth {
-		m.pendingInnerWidth = minPanelInnerWidth
+	if m.pendingInnerWidth < minPanelInnerWidth() {
+		m.pendingInnerWidth = minPanelInnerWidth()
 	}
 	m.historyInnerWidth = historyBoxWidth - 4
-	if m.historyInnerWidth < minPanelInnerWidth {
-		m.historyInnerWidth = minPanelInnerWidth
+	if m.historyInnerWidth < minPanelInnerWidth() {
+		m.historyInnerWidth = minPanelInnerWidth()
 	}
 
-	recurringNameWidth := m.recurringInnerWidth - 3*2 - whenColWidth - statusColWidth
+	recurringNameWidth := m.recurringInnerWidth - 3*2 - whenColWidth - statusColWidth()
 	if recurringNameWidth < minNameColWidth {
 		recurringNameWidth = minNameColWidth
 	}
 	m.recurringTable.SetColumns([]table.Column{
 		{Title: "job", Width: recurringNameWidth},
 		{Title: "next run", Width: whenColWidth},
-		{Title: "status", Width: statusColWidth},
+		{Title: "status", Width: statusColWidth()},
 	})
 	m.recurringTable.SetWidth(m.recurringInnerWidth)
 	m.recurringStatusOffset = (recurringNameWidth + 2) + (whenColWidth + 2)
 
-	pendingNameWidth := m.pendingInnerWidth - 3*2 - scheduleColWidth - statusColWidth
+	pendingNameWidth := m.pendingInnerWidth - 3*2 - scheduleColWidth() - statusColWidth()
 	if pendingNameWidth < minNameColWidth {
 		pendingNameWidth = minNameColWidth
 	}
 	m.pendingTable.SetColumns([]table.Column{
 		{Title: "job", Width: pendingNameWidth},
-		{Title: "scheduled for", Width: scheduleColWidth},
-		{Title: "status", Width: statusColWidth},
+		{Title: "scheduled for", Width: scheduleColWidth()},
+		{Title: "status", Width: statusColWidth()},
 	})
 	m.pendingTable.SetWidth(m.pendingInnerWidth)
-	m.pendingStatusOffset = (pendingNameWidth + 2) + (scheduleColWidth + 2)
+	m.pendingStatusOffset = (pendingNameWidth + 2) + (scheduleColWidth() + 2)
 
-	historyNameWidth := m.historyInnerWidth - 3*2 - whenColWidth - statusColWidth
+	historyNameWidth := m.historyInnerWidth - 3*2 - whenColWidth - statusColWidth()
 	if historyNameWidth < minNameColWidth {
 		historyNameWidth = minNameColWidth
 	}
 	m.historyTable.SetColumns([]table.Column{
 		{Title: "name", Width: historyNameWidth},
 		{Title: "date", Width: whenColWidth},
-		{Title: "status", Width: statusColWidth},
+		{Title: "status", Width: statusColWidth()},
 	})
 	m.historyTable.SetWidth(m.historyInnerWidth)
 	m.historyStatusOffset = (historyNameWidth + 2) + (whenColWidth + 2)
-	m.statusCellWidth = statusColWidth + 2
+	m.statusCellWidth = statusColWidth() + 2
 
 	minBody := tableBoxOverhead + minVisibleRows + detailBoxOverhead + minDetailLines
 	bodyHeight := m.height - headerLines - footerLines
@@ -571,17 +574,17 @@ func (m *appModel) layout() {
 		bodyHeight = minBody
 	}
 
-	jobsRowHeight := bodyHeight * jobsRowPercent / 100
+	jobsRowHeight := bodyHeight * jobsRowPercent() / 100
 	minJobsRow := tableBoxOverhead + minVisibleRows
 	if jobsRowHeight < minJobsRow {
 		jobsRowHeight = minJobsRow
 	}
 	// Never hand the row more height than the longest list actually needs
-	// (capped at maxVisibleRows regardless) — leftover falls through to the
+	// (capped at maxVisibleRows() regardless) — leftover falls through to the
 	// detail panel instead.
 	idealRows := max(len(m.recurringJobs), len(m.pendingJobs), len(m.activeHistoryJobs()))
-	if idealRows > maxVisibleRows {
-		idealRows = maxVisibleRows
+	if idealRows > maxVisibleRows() {
+		idealRows = maxVisibleRows()
 	}
 	if idealJobsRow := max(tableBoxOverhead+idealRows, minJobsRow); jobsRowHeight > idealJobsRow {
 		jobsRowHeight = idealJobsRow
@@ -672,14 +675,17 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.message = "List refreshed."
 		return m, nil
 	case key.Matches(keyMsg, resolve("reload")):
-		// Config-file-first: an external edit to keybindings.json takes effect
-		// here, without restarting.
-		changed, err := reg.Reload()
+		// Config-file-first: external edits to keybindings.json and config.toml
+		// take effect here, without restarting.
+		kChanged, kErr := reg.Reload()
+		cChanged, cErr := reloadSettings()
 		switch {
-		case err != nil:
-			m.message = "keybindings: " + err.Error()
-		case changed:
-			m.message = "Keybindings reloaded."
+		case kErr != nil || cErr != nil:
+			m.message = "config: " + errors.Join(kErr, cErr).Error()
+		case kChanged || cChanged:
+			// Column widths and row shares changed under us, so redo the layout.
+			m.layout()
+			m.message = "Config reloaded."
 		default:
 			m.message = "Config unchanged."
 		}
@@ -761,7 +767,7 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.message = fmt.Sprintf("'%s' started.", job.Name)
-		return m, tea.Tick(3*time.Second, func(time.Time) tea.Msg { return reloadMsg{} })
+		return m, tea.Tick(settings.Timing.RunNowReloadDelay.Duration, func(time.Time) tea.Msg { return reloadMsg{} })
 	case key.Matches(keyMsg, resolve("delete")):
 		archived := m.selectedSide == focusHistory && m.historyMode == historyModeArchived
 		jobs := m.selectedJobs(m.selectedSide)
@@ -1049,7 +1055,7 @@ func (m appModel) View() string {
 		theme.Title().Render(m.panelTitle("recurring", focusRecurring))+"\n\n"+recurringView, m.recurringInnerWidth,
 	))
 
-	pendingView := decorateTable(m.pendingTable.View(), m.pendingJobs, m.pendingTable.Cursor(), m.pendingStatusOffset, m.statusCellWidth, scheduleColWidth, m.selected[focusPending], true)
+	pendingView := decorateTable(m.pendingTable.View(), m.pendingJobs, m.pendingTable.Cursor(), m.pendingStatusOffset, m.statusCellWidth, scheduleColWidth(), m.selected[focusPending], true)
 	pendingBox := theme.Panel(m.focus == focusPending).Render(padLines(
 		theme.Title().Render(m.panelTitle("pending", focusPending))+"\n\n"+pendingView, m.pendingInnerWidth,
 	))
@@ -1160,7 +1166,7 @@ func (m appModel) renderDetailBody() string {
 // soon as the table scrolls. Matching is exact even for "…"-truncated
 // names, and unambiguous because job names are unique. midWidth is the
 // *content* width of the middle column ("next run"/"scheduled for"/"date"),
-// which differs per panel (whenColWidth vs scheduleColWidth) and is needed
+// which differs per panel (whenColWidth vs scheduleColWidth()) and is needed
 // to recover the name column's own content width from the status offset.
 // The row at `cursor` is left untouched — bubbles/table already wraps it in
 // its own Selected style, and nesting another color in there would

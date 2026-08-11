@@ -243,7 +243,7 @@ func TestDecorateTableHighlight(t *testing.T) {
 	m.pendingTable.SetRows(rows)
 	m.pendingTable.SetCursor(0)
 
-	out := decorateTable(m.pendingTable.View(), m.pendingJobs, m.pendingTable.Cursor(), m.pendingStatusOffset, m.statusCellWidth, scheduleColWidth, m.selected[focusPending], true)
+	out := decorateTable(m.pendingTable.View(), m.pendingJobs, m.pendingTable.Cursor(), m.pendingStatusOffset, m.statusCellWidth, scheduleColWidth(), m.selected[focusPending], true)
 
 	highlight := sgrBg(string(colSurface1))
 	lines := strings.Split(out, "\n")
@@ -283,7 +283,7 @@ func TestDecorateTableStatusColoring(t *testing.T) {
 	m.pendingTable.SetRows(rows)
 	m.pendingTable.SetCursor(2) // gamma is the cursor row
 
-	out := decorateTable(m.pendingTable.View(), m.pendingJobs, m.pendingTable.Cursor(), m.pendingStatusOffset, m.statusCellWidth, scheduleColWidth, nil, true)
+	out := decorateTable(m.pendingTable.View(), m.pendingJobs, m.pendingTable.Cursor(), m.pendingStatusOffset, m.statusCellWidth, scheduleColWidth(), nil, true)
 
 	lines := strings.Split(out, "\n")
 	// Bold + foreground colors can prefix the 38;2 segment, so match on
