@@ -1,40 +1,55 @@
-# Contributing to tjobs
+# Contributing to Tabelajobs
 
-Thanks for your interest in contributing. Before opening a code PR, skim
-`README.md` and `instructions.md` to understand the job convention (the
-`~/jobs/<name>/` layout and the systemd user timer pattern) that tjobs
-discovers and displays.
+**English** · [Português](CONTRIBUTING.pt-BR.md)
+
+Thanks for the interest. Before opening a code PR, read `README.md` to
+understand the decisions already made.
 
 ## Reporting bugs / suggesting features
 
 Open an [issue](../../issues/new/choose) using the appropriate template.
 
-## Submitting a PR
+## Sending a PR
 
 1. Fork the repository.
-2. Create a branch from `main`.
-3. Run tests locally before opening the PR: `go test ./...`. Also run
-   `go vet ./...` and make sure `go build ./...` succeeds.
-4. Open the PR using the template — describe the what and why of the change.
+2. Create a branch off `main`.
+3. Run `go vet ./...`, `go test ./...` and `go build ./...` locally before
+   opening the PR.
+4. Open the PR using the template — describe the what and the why of the
+   change.
 
-## Versioning and changelog
+## Language
 
-tjobs follows [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`).
-While the project is at `0.x`, breaking changes may still land in a minor
-bump; starting at `1.0.0`, only a major bump introduces breaking changes.
+The convention across every TabelaDev project, so that nothing has to be
+decided again per repo:
 
-If your PR is a user-facing change (not docs/internal refactor), add a line
-under `[Unreleased]` in [CHANGELOG.md](CHANGELOG.md). Releases are tagged as
-`vX.Y.Z`, which triggers `.github/workflows/release.yml` to build binaries
-and publish a GitHub Release. Tagging `vX.Y.Z-beta.N` (or `-rc.N`) instead
-publishes it as a GitHub **prerelease** — visible under Releases but not
-marked "Latest" — for changes you want out for testing before committing to
-a stable tag.
+**English, no exceptions** — identifiers, file names, routes, query
+parameters, database schema, code comments, commit messages, branch names.
+The one carve-out is Brazilian domain vocabulary with no useful translation
+(`pix`, `boleto`, `fatura`, `cpf`, `cnpj`, institution names): those are proper
+nouns and stay as they are, the same way `oauth` or `webhook` do.
+
+**Bilingual** — `README.md` and `CONTRIBUTING.md` only. English is canonical
+(it is what GitHub renders); Portuguese lives beside it as `README.pt-BR.md`
+and `CONTRIBUTING.pt-BR.md`, with a language selector at the top of each.
+
+**English only** — `CHANGELOG.md`. Deliberately not bilingual: it changes on
+every release, and two hand-maintained copies drift within a few entries.
+
+**One language, chosen by purpose, never translated** — working notes and
+process files (`AGENTS.md`, `CLAUDE.md`, `TODO.md`, `PLANO.md`, `requests/`,
+issue and PR templates, anything under `docs/archive/`). They have no external
+reader; translating them is cost without benefit.
+
+**The language of the product's audience** — UI strings, AI prompts that ask
+for a Portuguese answer, and content that _is_ the product (RPG campaign
+material, course material). Portuguese there is the correct answer, not a
+pending translation.
 
 ## License
 
-By contributing, you agree that your contribution will be licensed under
-the [AGPL-3.0](LICENSE), the same license as the project.
+By contributing, you agree that your contribution will be licensed under the
+[AGPL-3.0](LICENSE), the same license as the project.
 
 ## Code of conduct
 
