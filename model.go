@@ -671,6 +671,19 @@ func (m appModel) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.reloadJobs()
 		m.message = "List refreshed."
 		return m, nil
+	case key.Matches(keyMsg, resolve("reload")):
+		// Config-file-first: an external edit to keybindings.json takes effect
+		// here, without restarting.
+		changed, err := reg.Reload()
+		switch {
+		case err != nil:
+			m.message = "keybindings: " + err.Error()
+		case changed:
+			m.message = "Keybindings reloaded."
+		default:
+			m.message = "Config unchanged."
+		}
+		return m, nil
 	case key.Matches(keyMsg, resolve("new")):
 		m.createForm = newCreateForm()
 		m.mode = modeCreate

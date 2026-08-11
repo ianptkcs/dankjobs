@@ -20,6 +20,7 @@ func init() {
 		tuiui.Action{ID: "help", Help: "keybindings", Keys: []string{"?"}},
 		tuiui.Action{ID: "settings", Help: "rebind keys", Keys: []string{","}},
 		tuiui.Action{ID: "refresh", Help: "refresh", Keys: []string{"r"}},
+		tuiui.Action{ID: "reload", Help: "reload config", Keys: []string{"f5"}},
 		tuiui.Action{ID: "new", Help: "new", Keys: []string{"n"}},
 		// A single "nav" action keeps the footer/help hints to one line
 		// ("ctrl+h/j/k/l move focus", like herdr's "h/j/k/l move focus")
