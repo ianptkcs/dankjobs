@@ -2,7 +2,7 @@
     "id": "tjobs",
     "name": "Tabela Jobs",
     "description": "Shows the next pending job and lists all pending jobs scheduled via tjobs.",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "author": "Ian Soares",
     "icon": "schedule",
     "type": "widget",

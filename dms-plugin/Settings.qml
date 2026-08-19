@@ -1,7 +1,7 @@
 import QtQuick
 import qs.Common
-import qs.Modules.Plugins
 import qs.Widgets
+import qs.Modules.Plugins
 
 PluginSettings {
     id: root
@@ -22,7 +22,6 @@ PluginSettings {
         defaultValue: 0
         minimum: 0
         maximum: 400
-        stepSize: 10
         unit: "px"
     }
 
@@ -33,7 +32,6 @@ PluginSettings {
         defaultValue: 60
         minimum: 10
         maximum: 3600
-        stepSize: 10
         unit: "s"
     }
 }
